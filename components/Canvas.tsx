@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NoteWindow from "./NoteWindow";
 import { loadNotes, newNote, saveNotes, type Note } from "@/lib/notes";
-import { formatSummary, summarize } from "@/lib/summarize";
+import { extractOriginal, formatSummary, summarize } from "@/lib/summarize";
 import { useSpeech } from "@/lib/useSpeech";
 
 export default function Canvas() {
@@ -65,12 +65,13 @@ export default function Canvas() {
     async (id: string, text: string, setTitle: boolean) => {
       markBusy(id, true);
       setNotice(null);
+      const original = extractOriginal(text);
       try {
-        const result = await summarize(text);
+        const result = await summarize(original);
         setNotes((all) =>
           all.map((n) =>
             n.id === id
-              ? { ...n, title: setTitle || !n.title ? result.title : n.title, text: formatSummary(result, text), updatedAt: Date.now() }
+              ? { ...n, title: setTitle || !n.title ? result.title : n.title, text: formatSummary(result, original), updatedAt: Date.now() }
               : n,
           ),
         );
