@@ -3,7 +3,7 @@ import type { SummaryResult } from "@/app/api/summarize/route";
 export async function summarize(text: string): Promise<SummaryResult> {
   const res = await fetch("/api/summarize", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Hoja-Client": "1" },
     body: JSON.stringify({ text }),
   });
   const data = await res.json().catch(() => ({}));
