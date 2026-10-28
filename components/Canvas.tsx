@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AppBar from "./AppBar";
+import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
+import Menu from "./Menu";
 import NoteWindow, { type NoteAction } from "./NoteWindow";
-import { ai, extractOriginal, formatSummary } from "@/lib/ai";
+import { ai, extractOriginal, formatMeeting, formatSummary } from "@/lib/ai";
+import { exportJson, exportMarkdown } from "@/lib/export";
+import { createShare, stopSharing } from "@/lib/share";
+import { TEMPLATES, buildTemplate } from "@/lib/templates";
 import { buildMindMap } from "@/lib/mindmap";
 import { CARDS, LINKS, NOTES, type Card } from "@/lib/model";
 import { newNote, type Note } from "@/lib/notes";
@@ -25,6 +30,8 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<Map<string, NoteAction>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [mode, setMode] = useState<"note" | "meeting">("note");
   const [draft, setDraft] = useState<{ fromId: string; x: number; y: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
@@ -208,21 +215,91 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     [setLinks],
   );
 
-  const toggleDictation = useCallback(() => {
-    if (!speech.listening) {
-      speech.start();
-      return;
+  const toggleDictation = useCallback(
+    (as: "note" | "meeting") => {
+      if (!speech.listening) {
+        setMode(as);
+        speech.start();
+        return;
+      }
+      speech.stop();
+      const transcript = `${speech.finalText} ${speech.interim}`.trim();
+      if (!transcript) return;
+      const note = newNote(notes.length, ++topZ.current, viewportSpot());
+      note.title = mode === "meeting" ? "Reunión" : "Nota de voz";
+      note.text = transcript;
+      setNotes((all) => [...all, note]);
+      setActiveId(note.id);
+      if (transcript.length < 20) return;
+      if (mode === "note") {
+        void runSummary(note.id, transcript, true);
+        return;
+      }
+      void (async () => {
+        setBusyFor(note.id, "summarize");
+        try {
+          const today = new Date().toLocaleDateString("en-CA");
+          const result = await ai("meeting", { text: transcript, today });
+          setNotes((all) =>
+            all.map((n) => (n.id === note.id ? { ...n, title: result.title, text: formatMeeting(result, transcript), updatedAt: Date.now() } : n)),
+          );
+          const dated = result.actions.filter((a) => a.due).length;
+          setNotice(
+            dated > 0
+              ? `Listo: ${result.actions.length} pendientes, ${dated} con fecha. En la nota, IA ✦ → calendario.`
+              : `Listo: ${result.actions.length} pendientes.`,
+          );
+        } catch (e) {
+          setNotice(e instanceof Error ? e.message : "No se pudo procesar la reunión.");
+        } finally {
+          setBusyFor(note.id, null);
+        }
+      })();
+    },
+    [speech, mode, notes.length, runSummary, setNotes, viewportSpot, setBusyFor],
+  );
+
+  const applyTemplate = useCallback(
+    (id: string) => {
+      const t = TEMPLATES.find((x) => x.id === id);
+      if (!t) return;
+      const fresh = buildTemplate(t, viewportSpot(), topZ.current + 1);
+      topZ.current += fresh.length;
+      setNotes((all) => [...all, ...fresh]);
+      canvasRef.current?.scrollTo({ left: Math.max(0, fresh[0].x - 60), top: Math.max(0, fresh[0].y - 60), behavior: "smooth" });
+    },
+    [setNotes, viewportSpot],
+  );
+
+  const openNote = useCallback(
+    (id: string) => {
+      const n = notes.find((x) => x.id === id);
+      if (!n) return;
+      setQuery("");
+      focus(id);
+      canvasRef.current?.scrollTo({ left: Math.max(0, n.x - 80), top: Math.max(0, n.y - 80), behavior: "smooth" });
+    },
+    [notes, focus],
+  );
+
+  const share = useCallback(async () => {
+    try {
+      const url = await createShare(notes, links, "Mi lienzo");
+      await navigator.clipboard.writeText(url).catch(() => undefined);
+      setNotice(`Enlace de solo lectura copiado: ${url}`);
+    } catch {
+      setNotice("No se pudo crear el enlace. ¿Ya ejecutaste el SQL actualizado en Supabase?");
     }
-    speech.stop();
-    const transcript = `${speech.finalText} ${speech.interim}`.trim();
-    if (!transcript) return;
-    const note = newNote(notes.length, ++topZ.current, viewportSpot());
-    note.title = "Nota de voz";
-    note.text = transcript;
-    setNotes((all) => [...all, note]);
-    setActiveId(note.id);
-    if (transcript.length >= 20) void runSummary(note.id, transcript, true);
-  }, [speech, notes.length, runSummary, setNotes, viewportSpot]);
+  }, [notes, links]);
+
+  const unshare = useCallback(async () => {
+    try {
+      await stopSharing();
+      setNotice("Dejaste de compartir: los enlaces anteriores ya no funcionan.");
+    } catch {
+      setNotice("No se pudieron quitar los enlaces.");
+    }
+  }, []);
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(
@@ -248,11 +325,46 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <button className="btn line" onClick={() => setAsking((a) => !a)} aria-pressed={asking}>
+          Preguntar ✦
+        </button>
+        <Menu
+          label="Plantillas ▾"
+          items={TEMPLATES.map((t) => ({ label: t.label, hint: t.description, onSelect: () => applyTemplate(t.id) }))}
+        />
+        <Menu
+          label="Más ▾"
+          items={[
+            { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(notes, links), disabled: notes.length === 0 },
+            { label: "Respaldo completo (JSON)", hint: "Notas, mapas y posiciones", onSelect: () => exportJson(notes, links), disabled: notes.length === 0 },
+            ...(cloud
+              ? [
+                  { label: "Compartir lienzo (solo lectura)", hint: "Crea un enlace y lo copia", onSelect: share, disabled: notes.length === 0 },
+                  { label: "Dejar de compartir", hint: "Desactiva todos tus enlaces", onSelect: unshare },
+                ]
+              : []),
+          ]}
+        />
         {speech.supported && (
-          <button className={`btn line rec${speech.listening ? " on" : ""}`} onClick={toggleDictation}>
-            <span className="rec-dot" aria-hidden="true" />
-            {speech.listening ? "Detener" : "Dictar"}
-          </button>
+          <>
+            <button
+              className={`btn line rec${speech.listening && mode === "meeting" ? " on" : ""}`}
+              disabled={speech.listening && mode !== "meeting"}
+              onClick={() => toggleDictation("meeting")}
+              title="Graba una reunión y saca pendientes con fecha"
+            >
+              <span className="rec-dot" aria-hidden="true" />
+              {speech.listening && mode === "meeting" ? "Detener" : "Reunión"}
+            </button>
+            <button
+              className={`btn line rec${speech.listening && mode === "note" ? " on" : ""}`}
+              disabled={speech.listening && mode !== "note"}
+              onClick={() => toggleDictation("note")}
+            >
+              <span className="rec-dot" aria-hidden="true" />
+              {speech.listening && mode === "note" ? "Detener" : "Dictar"}
+            </button>
+          </>
         )}
         <button className="btn" onClick={add}>
           + Nueva nota
@@ -286,7 +398,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               <i className="dot close" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
-              <span className="note-label mono">{speech.listening ? "escuchando" : "aviso"}</span>
+              <span className="note-label mono">{speech.listening ? (mode === "meeting" ? "escuchando la reunión" : "escuchando") : "aviso"}</span>
             </div>
             <p className="live-text">
               {speech.listening ? (
@@ -300,6 +412,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
             </p>
           </aside>
         )}
+        {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
         {ready && notes.length === 0 && !speech.listening && (
           <div className="empty">
             <h1>Hoja</h1>

@@ -9,9 +9,15 @@ npm run dev
 
 ## Qué hace
 
-- Canvas con notas como ventanas: arrastrar, redimensionar, etiquetar, buscar.
-- Dictado por voz (Web Speech API del navegador) y resúmenes con IA (OpenAI).
-- Cuentas con enlace al correo (Supabase) y notas sincronizadas en la nube.
+- **Lienzo:** notas como ventanas (arrastrar, redimensionar, etiquetar, buscar) y **conexiones** entre ellas.
+- **Mapas mentales:** cualquier nota se expande en un mapa con IA ("IA ✦ → Expandir en mapa mental").
+- **Estudio:** tarjetas de repaso con repetición espaciada (teclado: espacio y 1–4) y guías de examen armadas con varias notas.
+- **Reunión:** graba, transcribe y saca decisiones y pendientes con responsable y fecha; los pendientes con fecha se exportan al calendario (.ics).
+- **Dictado por voz** (Web Speech API del navegador) y **resúmenes** con IA.
+- **Plantillas:** Lean Canvas, validar una idea, pitch, semana de trabajo, repaso de examen, agenda de reunión.
+- **Pregúntale a tus notas:** respuestas con las notas fuente.
+- **Exportar** a Markdown o JSON, y **compartir** un lienzo por enlace de solo lectura.
+- Instalable como app (PWA) y cuentas con enlace al correo (Supabase).
 
 ## Modos
 
@@ -21,7 +27,7 @@ npm run dev
 ## Configurar cuentas (Supabase)
 
 1. Crea un proyecto en supabase.com.
-2. SQL Editor → pega y ejecuta `supabase/schema.sql` (tabla `notes` con seguridad por usuario).
+2. SQL Editor → pega y ejecuta `supabase/schema.sql`. Es idempotente: vuelve a ejecutarlo cada vez que cambie el esquema.
 3. Authentication → URL Configuration:
    - **Site URL:** `https://hoja.m4pl3.xyz`
    - **Redirect URLs:** `https://hoja.m4pl3.xyz/**` y `http://localhost:3000/**`
@@ -30,7 +36,14 @@ npm run dev
 
 El correo de Supabase tiene un límite bajo por hora; para uso real configura un SMTP propio en Authentication → SMTP Settings.
 
+## IA y costos
+
+- Todas las funciones de IA pasan por `/api/ai` (OpenAI, modelo en `OPENAI_MODEL`). Solo con sesión iniciada.
+- Límite mensual por persona: `AI_MONTHLY_LIMIT` (por defecto 150), contado en la base de datos. Además hay límites por minuto y por día.
+- Pon también un límite de gasto mensual en la cuenta de OpenAI.
+
 ## Siguiente
 
-1. Tarjetas de repaso y búsqueda por significado.
-2. Límite de uso por plan.
+1. Búsqueda por significado con embeddings (hoy "Preguntar" elige notas por palabras clave).
+2. Funcionamiento sin conexión.
+3. Planes de pago.
