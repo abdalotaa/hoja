@@ -9,9 +9,11 @@ interface Props {
   onChange: (id: string, patch: Partial<Note>) => void;
   onFocus: (id: string) => void;
   onDelete: (id: string) => void;
+  onSummarize: (id: string, text: string) => void;
+  summarizing: boolean;
 }
 
-export default function NoteWindow({ note, active, onChange, onFocus, onDelete }: Props) {
+export default function NoteWindow({ note, active, onChange, onFocus, onDelete, onSummarize, summarizing }: Props) {
   const [dragging, setDragging] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const origin = useRef({ px: 0, py: 0, x: 0, y: 0, w: 0, h: 0 });
@@ -94,6 +96,15 @@ export default function NoteWindow({ note, active, onChange, onFocus, onDelete }
         <div className="note-foot">
           <button className="tag" data-tone={note.tone} onClick={cycleTone} title="Cambiar etiqueta">
             {TONE_LABEL[note.tone]}
+          </button>
+          <span className="spacer" />
+          <button
+            className="tag ai"
+            disabled={summarizing || note.text.trim().length < 20}
+            onClick={() => onSummarize(note.id, note.text)}
+            title="Resumir con IA"
+          >
+            {summarizing ? "Resumiendo…" : "Resumir ✦"}
           </button>
         </div>
       </div>
