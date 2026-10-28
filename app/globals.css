@@ -190,3 +190,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .btn, .note { transition: none; }
 }
+
+/* ───────── login ───────── */
+.login { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; overflow: auto; }
+.login-card { width: min(420px, 100%); box-shadow: 10px 10px 0 var(--accent); }
+.login-body { padding: 26px 26px 28px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.login-body h1 { margin: 0; font-size: 64px; font-weight: 900; letter-spacing: -0.04em; line-height: 0.9; }
+.login-body p { margin: 0; color: var(--body-ink); line-height: 1.5; }
+.login-body form { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; width: 100%; }
+.login-input { width: 100%; }
+.login-hand { font-size: 28px; color: var(--accent); }
+.login-error { color: var(--accent); font-weight: 700; }
+.btn:disabled { opacity: 0.5; cursor: wait; }
+.who { font-size: 13px; color: var(--muted); max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 800px) { .who { display: none; } }
+
+.who-form { display: flex; align-items: center; gap: 10px; margin: 0; }

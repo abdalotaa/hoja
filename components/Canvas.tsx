@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NoteWindow from "./NoteWindow";
+import { deleteCloudNote, loadCloudNotes, saveCloudNotes } from "@/lib/cloud";
 import { loadNotes, newNote, saveNotes, type Note } from "@/lib/notes";
 import { extractOriginal, formatSummary, summarize } from "@/lib/summarize";
 import { useSpeech } from "@/lib/useSpeech";
 
-export default function Canvas() {
+export default function Canvas({ userEmail }: { userEmail?: string }) {
+  const cloud = Boolean(userEmail);
+  const synced = useRef(new Map<string, number>());
+  const [syncError, setSyncError] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [ready, setReady] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -17,11 +21,33 @@ export default function Canvas() {
   const speech = useSpeech("es-MX");
 
   useEffect(() => {
-    const saved = loadNotes();
-    topZ.current = saved.reduce((m, n) => Math.max(m, n.z), 1);
-    setNotes(saved);
-    setReady(true);
-  }, []);
+    let cancelled = false;
+    (async () => {
+      let saved = loadNotes();
+      if (cloud) {
+        try {
+          const remote = await loadCloudNotes();
+          if (remote.length === 0 && saved.length > 0) {
+            // First login on this browser: move the local notes to the account.
+            await saveCloudNotes(saved);
+            saveNotes([]);
+          } else {
+            saved = remote;
+          }
+          saved.forEach((n) => synced.current.set(n.id, n.updatedAt));
+        } catch {
+          setSyncError(true);
+        }
+      }
+      if (cancelled) return;
+      topZ.current = saved.reduce((m, n) => Math.max(m, n.z), 1);
+      setNotes(saved);
+      setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cloud]);
 
   useEffect(() => {
     if (!notice) return;
@@ -30,8 +56,23 @@ export default function Canvas() {
   }, [notice]);
 
   useEffect(() => {
-    if (ready) saveNotes(notes);
-  }, [notes, ready]);
+    if (!ready) return;
+    if (!cloud) {
+      saveNotes(notes);
+      return;
+    }
+    const pending = notes.filter((n) => synced.current.get(n.id) !== n.updatedAt);
+    if (pending.length === 0) return;
+    const t = setTimeout(() => {
+      saveCloudNotes(pending)
+        .then(() => {
+          pending.forEach((n) => synced.current.set(n.id, n.updatedAt));
+          setSyncError(false);
+        })
+        .catch(() => setSyncError(true));
+    }, 700);
+    return () => clearTimeout(t);
+  }, [notes, ready, cloud]);
 
   const add = useCallback(() => {
     const note = newNote(notes.length, ++topZ.current);
@@ -45,12 +86,16 @@ export default function Canvas() {
 
   const focus = useCallback((id: string) => {
     setActiveId(id);
-    setNotes((all) => all.map((n) => (n.id === id && n.z < topZ.current ? { ...n, z: ++topZ.current } : n)));
+    setNotes((all) => all.map((n) => (n.id === id && n.z < topZ.current ? { ...n, z: ++topZ.current, updatedAt: Date.now() } : n)));
   }, []);
 
   const remove = useCallback((id: string) => {
     setNotes((all) => all.filter((n) => n.id !== id));
-  }, []);
+    if (cloud) {
+      synced.current.delete(id);
+      deleteCloudNote(id).catch(() => setSyncError(true));
+    }
+  }, [cloud]);
 
   const markBusy = useCallback((id: string, on: boolean) => {
     setBusy((prev) => {
@@ -114,6 +159,11 @@ export default function Canvas() {
           Hoja
         </div>
         <span className="spacer" />
+        {syncError && (
+          <span className="mono" style={{ color: "var(--accent)" }} role="status">
+            sin conexión
+          </span>
+        )}
         <input
           className="search"
           type="search"
@@ -131,6 +181,16 @@ export default function Canvas() {
         <button className="btn" onClick={add}>
           + Nueva nota
         </button>
+        {userEmail && (
+          <form action="/auth/signout" method="post" className="who-form">
+            <span className="who" title={userEmail}>
+              {userEmail}
+            </span>
+            <button className="btn line" type="submit">
+              Salir
+            </button>
+          </form>
+        )}
       </header>
 
       <main className="canvas" onPointerDown={(e) => e.target === e.currentTarget && setActiveId(null)}>

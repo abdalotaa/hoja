@@ -36,9 +36,9 @@ function isFromApp(request: Request): boolean {
   }
 }
 
-function overLimit(request: Request): boolean {
+function overLimit(request: Request, userId?: string): boolean {
   const now = Date.now();
-  const ip = clientIp(request);
+  const ip = userId ? `user:${userId}` : clientIp(request);
 
   globalHits = globalHits.filter((t) => now - t < DAY);
   if (globalHits.length >= GLOBAL_PER_DAY) return true;
@@ -63,7 +63,7 @@ function overLimit(request: Request): boolean {
 export type GuardResult = { ok: true; text: string } | { ok: false; status: number; error: string };
 
 /** Runs every check before any paid call is made. */
-export async function guardSummarizeRequest(request: Request): Promise<GuardResult> {
+export async function guardSummarizeRequest(request: Request, userId?: string): Promise<GuardResult> {
   if (!isFromApp(request)) {
     return { ok: false, status: 403, error: "Solicitud no permitida." };
   }
@@ -71,7 +71,7 @@ export async function guardSummarizeRequest(request: Request): Promise<GuardResu
   if (length > MAX_BODY_BYTES) {
     return { ok: false, status: 413, error: "La nota es demasiado larga." };
   }
-  if (overLimit(request)) {
+  if (overLimit(request, userId)) {
     return { ok: false, status: 429, error: "Has usado muchos resúmenes. Intenta más tarde." };
   }
 

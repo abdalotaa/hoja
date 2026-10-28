@@ -1,4 +1,6 @@
 import { guardSummarizeRequest } from "@/lib/guards";
+import { authEnabled } from "@/lib/supabase/env";
+import { getUser } from "@/lib/supabase/server";
 
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
@@ -30,7 +32,15 @@ const SYSTEM =
   "qué dice el texto.";
 
 export async function POST(request: Request) {
-  const guard = await guardSummarizeRequest(request);
+  // With accounts on, only signed-in people can spend the AI budget, and limits are per person.
+  let userId: string | undefined;
+  if (authEnabled) {
+    const user = await getUser();
+    if (!user) return Response.json({ error: "Inicia sesión para resumir." }, { status: 401 });
+    userId = user.id;
+  }
+
+  const guard = await guardSummarizeRequest(request, userId);
   if (!guard.ok) return Response.json({ error: guard.error }, { status: guard.status });
   const text = guard.text;
 
