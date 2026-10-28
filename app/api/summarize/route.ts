@@ -1,7 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
-const hasCredentials = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
 const SCHEMA = {
   type: "object",
@@ -22,9 +19,15 @@ export interface SummaryResult {
   actionItems: string[];
 }
 
+const SYSTEM =
+  "Eres el asistente de una app de notas. Recibes una transcripción de voz o apuntes en bruto, " +
+  "en el idioma del usuario (normalmente español de México). Resume sin inventar nada que no esté " +
+  "en el texto: si no se menciona un pendiente, no lo agregues. Responde en el mismo idioma del texto.";
+
 export async function POST(request: Request) {
-  if (!hasCredentials()) {
-    return Response.json({ error: "Falta configurar ANTHROPIC_API_KEY en el servidor." }, { status: 500 });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return Response.json({ error: "Falta configurar OPENAI_API_KEY en el servidor." }, { status: 500 });
   }
 
   const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
@@ -37,33 +40,54 @@ export async function POST(request: Request) {
     return Response.json({ error: "El texto es demasiado largo." }, { status: 413 });
   }
 
+  let res: Response;
   try {
-    const response = await client.messages.create({
-      model: "claude-opus-5-5",
-      max_tokens: 2000,
-      output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
-      system:
-        "Eres el asistente de una app de notas. Recibes una transcripción de voz o apuntes en bruto, " +
-        "en el idioma del usuario (normalmente español de México). Resume sin inventar nada que no esté " +
-        "en el texto: si no se menciona un pendiente, no lo agregues. Responde en el mismo idioma del texto.",
-      messages: [{ role: "user", content: `<texto>\n${text}\n</texto>` }],
+    res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: MODEL,
+        max_completion_tokens: 1200,
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: `<texto>\n${text}\n</texto>` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "note_summary", strict: true, schema: SCHEMA },
+        },
+      }),
     });
+  } catch {
+    return Response.json({ error: "No se pudo contactar a OpenAI." }, { status: 502 });
+  }
 
-    if (response.stop_reason === "refusal") {
-      return Response.json({ error: "No se pudo resumir este contenido." }, { status: 422 });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
+    if (res.status === 401) return Response.json({ error: "La OPENAI_API_KEY no es válida." }, { status: 500 });
+    if (res.status === 429) {
+      const noCredit = detail?.error?.code === "insufficient_quota";
+      return Response.json(
+        { error: noCredit ? "Se acabó el saldo de la cuenta de OpenAI." : "Demasiadas solicitudes, intenta en un momento." },
+        { status: 429 },
+      );
     }
-    const block = response.content.find((b) => b.type === "text");
-    if (!block || block.type !== "text") {
-      return Response.json({ error: "Respuesta vacía." }, { status: 502 });
-    }
-    return Response.json(JSON.parse(block.text) as SummaryResult);
-  } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      return Response.json({ error: "Falta configurar ANTHROPIC_API_KEY." }, { status: 500 });
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      return Response.json({ error: "Demasiadas solicitudes, intenta en un momento." }, { status: 429 });
+    if (res.status === 404 || res.status === 400) {
+      return Response.json({ error: `El modelo "${MODEL}" no está disponible. Cambia OPENAI_MODEL.` }, { status: 502 });
     }
     return Response.json({ error: "No se pudo generar el resumen." }, { status: 502 });
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string | null; refusal?: string | null } }[];
+  };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    return Response.json({ error: "No se pudo resumir este contenido." }, { status: 422 });
+  }
+  try {
+    return Response.json(JSON.parse(content) as SummaryResult);
+  } catch {
+    return Response.json({ error: "Respuesta inválida del modelo." }, { status: 502 });
   }
 }
