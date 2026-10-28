@@ -1,49 +1,174 @@
+/* Hoja — built on the M4PL3 design system: cream paper, ink outlines, rust accent. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f3efe7;
+  --paper: #ffffff;
+  --ink: #17140f;
+  --body-ink: #3a352c;
+  --muted: #6b6355;
+  --accent: #8c2f1e;
+  --butter: #f1df9e;
+  --mint: #cfe3cf;
+  --line-soft: #d8d2c4;
+  --hover-bg: #eee8dc;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+* { box-sizing: border-box; }
 
-html {
-  height: 100%;
-}
-
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
+html, body { height: 100%; margin: 0; }
 
 body {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-archivo), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
+button { font: inherit; color: inherit; cursor: pointer; }
+
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::selection { background: var(--accent); color: var(--bg); }
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
   margin: 0;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+.hand {
+  font-family: var(--font-caveat), "Segoe Script", cursive;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+/* ───────── shell ───────── */
+.app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+.bar {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px clamp(14px, 3vw, 32px);
+  background: var(--bg);
+  border-bottom: 2px solid var(--ink);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 22px; letter-spacing: -0.04em; }
+.brand img { display: block; }
+.bar .spacer { flex: 1; }
+.search {
+  width: min(260px, 36vw);
+  padding: 9px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  font: inherit;
+  font-size: 14px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--ink); color: var(--bg);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.02em;
+  transition: transform 200ms var(--ease-out), background 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+.btn:hover { transform: translateY(-2px); }
+.btn:active { transform: scale(0.98); }
+.btn.line { background: transparent; color: var(--ink); }
+.btn.line:hover { background: var(--ink); color: var(--bg); }
+
+/* ───────── canvas ───────── */
+.canvas {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  background-image:
+    linear-gradient(to right, rgba(23, 20, 15, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 20, 15, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+.board { position: relative; width: 3000px; height: 2000px; }
+
+.empty {
+  position: fixed; left: 50%; top: 52%; transform: translate(-50%, -50%);
+  text-align: center; pointer-events: none;
+}
+.empty h1 { margin: 0 0 8px; font-size: clamp(44px, 8vw, 110px); font-weight: 900; letter-spacing: -0.04em; line-height: 0.88; }
+.empty p { margin: 0; font-size: 28px; color: var(--accent); }
+
+/* ───────── note window ───────── */
+.note {
+  position: absolute;
+  display: flex; flex-direction: column;
+  min-width: 220px; min-height: 160px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 8px 8px 0 var(--ink);
+  transition: box-shadow 250ms var(--ease-out);
+}
+.note[data-active="true"] { box-shadow: 12px 12px 0 var(--accent); }
+.note[data-dragging="true"] { box-shadow: 16px 16px 0 var(--accent); }
+
+.note-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--ink);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.note[data-dragging="true"] .note-bar { cursor: grabbing; }
+.dot {
+  width: 12px; height: 12px; padding: 0; border-radius: 50%;
+  border: 1.5px solid var(--ink); background: transparent;
+}
+.dot.close { background: var(--accent); }
+.dot.close:hover::after { content: "×"; display: block; margin-top: -4px; font-size: 11px; line-height: 12px; color: var(--bg); text-align: center; }
+.note-label { margin-left: 8px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.note-body { flex: 1; display: flex; flex-direction: column; padding: 14px 16px 16px; gap: 8px; min-height: 0; }
+.note-title {
+  border: 0; background: transparent; padding: 0;
+  font: inherit; font-size: 24px; font-weight: 900; letter-spacing: -0.03em; color: var(--ink);
+}
+.note-text {
+  flex: 1; resize: none; border: 0; background: transparent; padding: 0;
+  font: inherit; font-size: 15px; line-height: 1.5; color: var(--body-ink);
+}
+.note-title::placeholder, .note-text::placeholder { color: var(--muted); opacity: 0.7; }
+.note-title:focus-visible, .note-text:focus-visible { outline: none; }
+
+.note-foot { display: flex; align-items: center; gap: 8px; }
+.tag {
+  padding: 4px 10px; border: 1.5px solid var(--ink); border-radius: 999px;
+  font-size: 12px; font-weight: 700; background: var(--bg);
+}
+.tag[data-tone="butter"] { background: var(--butter); }
+.tag[data-tone="mint"] { background: var(--mint); }
+.tag[data-tone="rust"] { background: var(--accent); color: #f3efe7; }
+
+.grip {
+  position: absolute; right: 0; bottom: 0; width: 22px; height: 22px;
+  cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--ink) 50%, var(--ink) 56%, transparent 56%, transparent 68%, var(--ink) 68%, var(--ink) 74%, transparent 74%);
+}
+
+@media (max-width: 640px) {
+  .search { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .note { transition: none; }
 }
