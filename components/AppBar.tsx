@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 interface Props {
-  current: "lienzo" | "estudio";
+  current: "lienzo" | "estudio" | "calendario";
   userEmail?: string;
   children?: React.ReactNode;
 }
@@ -20,6 +20,9 @@ export default function AppBar({ current, userEmail, children }: Props) {
         </Link>
         <Link href="/estudio" aria-current={current === "estudio" ? "page" : undefined}>
           Estudio
+        </Link>
+        <Link href="/calendario" aria-current={current === "calendario" ? "page" : undefined}>
+          Calendario
         </Link>
       </nav>
       <span className="spacer" />

@@ -20,6 +20,15 @@ export interface Card {
   updatedAt: number;
 }
 
+/** A dated item added by hand on the calendar. */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  done: boolean;
+  updatedAt: number;
+}
+
 type Row = Record<string, unknown>;
 
 export interface Table<T> {
@@ -92,6 +101,19 @@ export const CARDS: Table<Card> = {
     interval: r.interval as number,
     ease: r.ease as number,
     reps: r.reps as number,
+    updatedAt: r.updated_at as number,
+  }),
+};
+
+export const EVENTS: Table<CalendarEvent> = {
+  key: "hoja:events:v1",
+  table: "events",
+  toRow: (e) => ({ id: e.id, title: e.title, date: e.date, done: e.done, updated_at: e.updatedAt }),
+  fromRow: (r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    date: r.date as string,
+    done: Boolean(r.done),
     updatedAt: r.updated_at as number,
   }),
 };

@@ -1,10 +1,13 @@
 import type { Note, Tone } from "./notes";
 import { newNote } from "./notes";
+import { makeTable, serializeTable, type TableData } from "./table";
 
 interface Block {
   title: string;
   hint: string;
   tone?: Tone;
+  /** When present the block is a table note instead of a text note. */
+  table?: TableData;
 }
 
 export interface Template {
@@ -12,10 +15,102 @@ export interface Template {
   label: string;
   description: string;
   cols: number;
+  /** Size of each block (default 300 x 220). */
+  cell?: { w: number; h: number };
   blocks: Block[];
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "tabla",
+    label: "Tabla en blanco",
+    description: "Filas y columnas con totales",
+    cols: 1,
+    cell: { w: 520, h: 400 },
+    blocks: [{ title: "Tabla", hint: "", table: makeTable([["Concepto", "text"], ["Monto", "money"]], [], 4) }],
+  },
+  {
+    id: "gastos",
+    label: "Control de gastos",
+    description: "Fecha, concepto, categoría y monto; total y por categoría",
+    cols: 1,
+    cell: { w: 640, h: 470 },
+    blocks: [
+      {
+        title: "Gastos del mes",
+        hint: "",
+        tone: "mint",
+        table: makeTable([["Fecha", "date"], ["Concepto", "text"], ["Categoría", "text"], ["Monto", "money"]], [], 6),
+      },
+    ],
+  },
+  {
+    id: "presupuesto",
+    label: "Presupuesto mensual",
+    description: "Cuánto planeas gastar y cuánto llevas",
+    cols: 1,
+    cell: { w: 560, h: 480 },
+    blocks: [
+      {
+        title: "Presupuesto",
+        hint: "",
+        tone: "butter",
+        table: makeTable(
+          [["Categoría", "text"], ["Presupuesto", "money"], ["Gastado", "money"]],
+          [["Renta"], ["Comida"], ["Transporte"], ["Servicios"], ["Ocio"], ["Ahorro"]],
+          0,
+        ),
+      },
+    ],
+  },
+  {
+    id: "clientes",
+    label: "Seguimiento de clientes",
+    description: "Quién sigue, cuándo contactarlo y cuánto vale",
+    cols: 1,
+    cell: { w: 700, h: 430 },
+    blocks: [
+      {
+        title: "Clientes",
+        hint: "",
+        tone: "rust",
+        table: makeTable([["Cliente", "text"], ["Estado", "text"], ["Próximo contacto", "date"], ["Valor", "money"]], [], 5),
+      },
+    ],
+  },
+  {
+    id: "horario",
+    label: "Horario de clases",
+    description: "Tu semana de lunes a viernes",
+    cols: 1,
+    cell: { w: 760, h: 430 },
+    blocks: [
+      {
+        title: "Horario",
+        hint: "",
+        table: makeTable(
+          [["Hora", "text"], ["Lunes", "text"], ["Martes", "text"], ["Miércoles", "text"], ["Jueves", "text"], ["Viernes", "text"]],
+          [["8:00"], ["10:00"], ["12:00"], ["14:00"], ["16:00"]],
+          0,
+        ),
+      },
+    ],
+  },
+  {
+    id: "calificaciones",
+    label: "Calificaciones",
+    description: "Materias, parciales, suma y promedio",
+    cols: 1,
+    cell: { w: 560, h: 420 },
+    blocks: [
+      {
+        title: "Calificaciones",
+        hint: "",
+        tone: "mint",
+        table: makeTable([["Materia", "text"], ["Parcial 1", "number"], ["Parcial 2", "number"], ["Final", "number"]], [], 5),
+      },
+    ],
+  },
   {
     id: "lean",
     label: "Lean Canvas",
@@ -111,17 +206,27 @@ const W = 300;
 const H = 220;
 const GAP = 36;
 
-/** Builds the notes of a template as a grid starting at the given spot. */
-export function buildTemplate(t: Template, origin: { x: number; y: number }, startZ: number): Note[] {
+export function templateSize(t: Template) {
+  const w = t.cell?.w ?? W;
+  const h = t.cell?.h ?? H;
+  const rows = Math.ceil(t.blocks.length / t.cols);
+  return { w: t.cols * w + (t.cols - 1) * GAP, h: rows * h + (rows - 1) * GAP };
+}
+
+/** Builds the notes of a template as a grid at (0, 0); the caller moves it to a free spot. */
+export function buildTemplate(t: Template, startZ: number): Note[] {
+  const w = t.cell?.w ?? W;
+  const h = t.cell?.h ?? H;
   return t.blocks.map((b, i) => ({
     ...newNote(i, startZ + i, {
-      x: origin.x + (i % t.cols) * (W + GAP),
-      y: origin.y + Math.floor(i / t.cols) * (H + GAP),
+      x: (i % t.cols) * (w + GAP),
+      y: Math.floor(i / t.cols) * (h + GAP),
     }),
     title: b.title,
-    text: b.hint,
+    text: b.table ? serializeTable(b.table) : b.hint,
+    kind: b.table ? ("table" as const) : undefined,
     tone: b.tone ?? "none",
-    w: W,
-    h: H,
+    w,
+    h,
   }));
 }

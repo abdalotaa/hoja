@@ -35,8 +35,9 @@ function layout(root: string, branches: Branch[]): Placed[] {
   return placed;
 }
 
-/** Builds the nodes and links of a mind map, starting at the given board position. */
-export function buildMindMap(map: MindMap, origin: { x: number; y: number }, startZ: number) {
+/** Builds the nodes and links of a mind map at (0, 0); the caller moves it to a free spot. */
+export function buildMindMap(map: MindMap, startZ: number) {
+  const origin = { x: 0, y: 0 };
   const placed = layout(map.root.trim() || "Idea", map.branches.slice(0, 8));
   const nodes: Note[] = placed.map((p, i) => {
     const tone: Tone = p.depth === 0 ? "butter" : p.depth === 1 ? "mint" : "none";
@@ -46,5 +47,11 @@ export function buildMindMap(map: MindMap, origin: { x: number; y: number }, sta
   const links: Link[] = placed
     .map((p, i) => (p.parent >= 0 ? { id: crypto.randomUUID(), from: nodes[p.parent].id, to: nodes[i].id, updatedAt: Date.now() } : null))
     .filter((l): l is Link => l !== null);
-  return { nodes, links, height: Math.max(...placed.map((p) => p.y)) * ROW + NODE_H };
+  const depth = Math.max(...placed.map((p) => p.depth));
+  return {
+    nodes,
+    links,
+    width: depth * COL + NODE_W,
+    height: Math.max(...placed.map((p) => p.y)) * ROW + NODE_H,
+  };
 }

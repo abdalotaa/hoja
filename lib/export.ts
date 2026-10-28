@@ -1,5 +1,6 @@
 import type { Link } from "./model";
 import type { Note } from "./notes";
+import { parseTable, tableToMarkdown } from "./table";
 
 function download(name: string, mime: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type: `${mime};charset=utf-8` }));
@@ -23,7 +24,8 @@ export function exportMarkdown(notes: Note[], links: Link[]) {
         .filter((l) => l.from === n.id || l.to === n.id)
         .map((l) => name(l.from === n.id ? l.to : l.from));
       const connected = related.length ? `\n\n_Conectada con: ${related.join(", ")}_` : "";
-      return `## ${n.title.trim() || "Sin título"}\n\n${n.text.trim()}${connected}`;
+      const text = n.kind === "table" ? tableToMarkdown(parseTable(n.text)) : n.text.trim();
+      return `## ${n.title.trim() || "Sin título"}\n\n${text}${connected}`;
     })
     .join("\n\n---\n\n");
   download(`hoja-${stamp()}.md`, "text/markdown", `# Mis notas de Hoja\n\n${body}\n`);

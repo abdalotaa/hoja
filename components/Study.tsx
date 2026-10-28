@@ -14,7 +14,7 @@ export default function Study({ userEmail }: { userEmail?: string }) {
   const cardsStore = useSynced(CARDS, cloud);
   const notesStore = useSynced(NOTES, cloud);
   const cards = cardsStore.items;
-  const notes = notesStore.items.filter((n) => n.kind !== "node");
+  const notes = notesStore.items.filter((n) => n.kind !== "node" && n.kind !== "table");
 
   const [now, setNow] = useState(0);
   useEffect(() => setNow(Date.now()), []);

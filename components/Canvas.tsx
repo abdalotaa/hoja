@@ -9,10 +9,12 @@ import NoteWindow, { type NoteAction } from "./NoteWindow";
 import { ai, extractOriginal, formatMeeting, formatSummary } from "@/lib/ai";
 import { exportJson, exportMarkdown } from "@/lib/export";
 import { createShare, stopSharing } from "@/lib/share";
-import { TEMPLATES, buildTemplate } from "@/lib/templates";
+import { TEMPLATES, buildTemplate, templateSize } from "@/lib/templates";
 import { buildMindMap } from "@/lib/mindmap";
+import { boardSize, freeSpot } from "@/lib/placement";
 import { CARDS, LINKS, NOTES, type Card } from "@/lib/model";
 import { newNote, type Note } from "@/lib/notes";
+import { noteText } from "@/lib/table";
 import { useSpeech } from "@/lib/useSpeech";
 import { useSynced } from "@/lib/useSynced";
 
@@ -50,11 +52,19 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     return () => clearTimeout(t);
   }, [notice]);
 
-  /** A free spot near what the person is looking at. */
-  const viewportSpot = useCallback(() => {
-    const c = canvasRef.current;
-    return { x: (c?.scrollLeft ?? 0) + 70 + (notes.length % 6) * 36, y: (c?.scrollTop ?? 0) + 60 + (notes.length % 6) * 36 };
-  }, [notes.length]);
+  const rects = useMemo(() => notes.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h })), [notes]);
+  const board = useMemo(() => boardSize(rects), [rects]);
+
+  /** A free spot for a block of this size, as close as possible to what the person is looking at. */
+  const spotFor = useCallback(
+    (size: { w: number; h: number }, near?: { x: number; y: number }) => {
+      const c = canvasRef.current;
+      const preferred = near ?? { x: (c?.scrollLeft ?? 0) + 60, y: (c?.scrollTop ?? 0) + 50 };
+      return freeSpot(rects, size, preferred, board);
+    },
+    [rects, board],
+  );
+  const viewportSpot = useCallback(() => spotFor({ w: 320, h: 260 }), [spotFor]);
 
   const add = useCallback(() => {
     const note = newNote(notes.length, ++topZ.current, viewportSpot());
@@ -128,8 +138,12 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       try {
         const source = extractOriginal(`${note.title}\n${note.text}`).trim();
         const map = await ai("mindmap", { text: source });
-        const origin = { x: note.x + note.w + 110, y: Math.max(40, note.y) };
-        const built = buildMindMap(map, origin, topZ.current + 1);
+        const built = buildMindMap(map, topZ.current + 1);
+        const origin = spotFor({ w: built.width, h: built.height }, { x: note.x + note.w + 110, y: Math.max(40, note.y) });
+        built.nodes.forEach((n) => {
+          n.x += origin.x;
+          n.y += origin.y;
+        });
         topZ.current += built.nodes.length;
         const rootLink = { id: crypto.randomUUID(), from: note.id, to: built.nodes[0].id, updatedAt: Date.now() };
         setNotes((all) => [...all, ...built.nodes]);
@@ -141,7 +155,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         setBusyFor(note.id, null);
       }
     },
-    [setBusyFor, setNotes, setLinks],
+    [setBusyFor, setNotes, setLinks, spotFor],
   );
 
   const makeCards = useCallback(
@@ -263,12 +277,17 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     (id: string) => {
       const t = TEMPLATES.find((x) => x.id === id);
       if (!t) return;
-      const fresh = buildTemplate(t, viewportSpot(), topZ.current + 1);
+      const fresh = buildTemplate(t, topZ.current + 1);
+      const origin = spotFor(templateSize(t));
+      fresh.forEach((n) => {
+        n.x += origin.x;
+        n.y += origin.y;
+      });
       topZ.current += fresh.length;
       setNotes((all) => [...all, ...fresh]);
-      canvasRef.current?.scrollTo({ left: Math.max(0, fresh[0].x - 60), top: Math.max(0, fresh[0].y - 60), behavior: "smooth" });
+      canvasRef.current?.scrollTo({ left: Math.max(0, origin.x - 60), top: Math.max(0, origin.y - 60), behavior: "smooth" });
     },
-    [setNotes, viewportSpot],
+    [setNotes, spotFor],
   );
 
   const openNote = useCallback(
@@ -303,7 +322,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(
-    () => (q ? notes.filter((n) => `${n.title} ${n.text}`.toLowerCase().includes(q)) : notes),
+    () => (q ? notes.filter((n) => `${n.title} ${noteText(n)}`.toLowerCase().includes(q)) : notes),
     [notes, q],
   );
   const shownIds = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
@@ -376,8 +395,8 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         className="canvas"
         onPointerDown={(e) => (e.target === e.currentTarget || e.target === boardRef.current) && setActiveId(null)}
       >
-        <div className="board" ref={boardRef}>
-          <LinksLayer notes={visible} links={shownLinks} draft={draft} onRemove={(id) => removeLinks([id])} />
+        <div className="board" ref={boardRef} style={{ width: board.w, height: board.h }}>
+          <LinksLayer notes={visible} links={shownLinks} draft={draft} width={board.w} height={board.h} onRemove={(id) => removeLinks([id])} />
           {visible.map((n) => (
             <NoteWindow
               key={n.id}

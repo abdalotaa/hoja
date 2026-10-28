@@ -9,6 +9,8 @@ interface Props {
   /** A link being dragged from a note to the pointer. */
   draft: { fromId: string; x: number; y: number } | null;
   onRemove?: (id: string) => void;
+  width?: number;
+  height?: number;
 }
 
 interface Anchor {
@@ -45,7 +47,7 @@ function curve(p: Anchor, q: Anchor) {
   return { d: `M${p.x},${p.y} C${c1} ${c2} ${q.x},${q.y}`, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
 }
 
-export default function LinksLayer({ notes, links, draft, onRemove }: Props) {
+export default function LinksLayer({ notes, links, draft, onRemove, width = 3000, height = 2000 }: Props) {
   const byId = new Map(notes.map((n) => [n.id, n]));
   const drawn = links
     .map((l) => {
@@ -61,7 +63,7 @@ export default function LinksLayer({ notes, links, draft, onRemove }: Props) {
 
   return (
     <>
-      <svg className="links" width="3000" height="2000" aria-hidden="true">
+      <svg className="links" width={width} height={height} aria-hidden="true">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#17140f" />

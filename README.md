@@ -9,8 +9,10 @@ npm run dev
 
 ## Qué hace
 
-- **Lienzo:** notas como ventanas (arrastrar, redimensionar, etiquetar, buscar) y **conexiones** entre ellas.
+- **Lienzo:** notas como ventanas (arrastrar, redimensionar, etiquetar, buscar) y **conexiones** entre ellas. Plantillas, mapas y notas nuevas se colocan en espacio libre, sin pisar lo que ya tienes.
 - **Mapas mentales:** cualquier nota se expande en un mapa con IA ("IA ✦ → Expandir en mapa mental").
+- **Tablas:** notas tipo hoja de cálculo (texto, número, dinero, fecha) con totales, promedio y resumen por categoría; plantillas de control de gastos, presupuesto, clientes, horario y calificaciones; descarga en CSV.
+- **Calendario:** vista mensual con tus eventos y las tareas con fecha (`☐ tarea — AAAA-MM-DD`) de tus notas; marcar una tarea la tacha en la nota. Exporta a .ics.
 - **Estudio:** tarjetas de repaso con repetición espaciada (teclado: espacio y 1–4) y guías de examen armadas con varias notas.
 - **Reunión:** graba, transcribe y saca decisiones y pendientes con responsable y fecha; los pendientes con fecha se exportan al calendario (.ics).
 - **Dictado por voz** (Web Speech API del navegador) y **resúmenes** con IA.

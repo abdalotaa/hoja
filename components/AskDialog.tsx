@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ai } from "@/lib/ai";
 import type { Note } from "@/lib/notes";
+import { noteText } from "@/lib/table";
 
 const plain = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -12,7 +13,7 @@ function relevant(question: string, notes: Note[]): Note[] {
     .split(/[^a-z0-9ñ]+/)
     .filter((w) => w.length >= 3);
   const scored = notes.map((n) => {
-    const hay = plain(`${n.title} ${n.text}`);
+    const hay = plain(`${n.title} ${noteText(n)}`);
     const score = words.reduce((s, w) => s + (hay.includes(w) ? 1 + (plain(n.title).includes(w) ? 1 : 0) : 0), 0);
     return { n, score };
   });
@@ -44,7 +45,7 @@ export default function AskDialog({ notes, onOpenNote, onClose }: Props) {
       const picked = relevant(question, real);
       const out = await ai("ask", {
         question: question.trim(),
-        notes: picked.map((n) => ({ id: n.id, title: n.title, text: n.text })),
+        notes: picked.map((n) => ({ id: n.id, title: n.title, text: noteText(n) })),
       });
       const byId = new Map(picked.map((n) => [n.id, n]));
       setResult({ answer: out.answer, sources: out.sources.map((id) => byId.get(id)).filter((n): n is Note => Boolean(n)) });

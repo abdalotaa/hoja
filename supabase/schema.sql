@@ -16,7 +16,7 @@ create table if not exists public.notes (
 );
 alter table public.notes add column if not exists kind text not null default 'note';
 alter table public.notes drop constraint if exists notes_kind_check;
-alter table public.notes add constraint notes_kind_check check (kind in ('note', 'node'));
+alter table public.notes add constraint notes_kind_check check (kind in ('note', 'node', 'table'));
 create index if not exists notes_user_idx on public.notes (user_id);
 
 -- ───────── links between notes (no foreign keys on purpose: they sync independently) ─────────
@@ -44,6 +44,17 @@ create table if not exists public.cards (
 );
 create index if not exists cards_user_idx on public.cards (user_id, due);
 
+-- ───────── calendar events added by hand ─────────
+create table if not exists public.events (
+  id          uuid primary key,
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  title       text not null check (char_length(title) <= 200),
+  date        text not null check (date ~ '^\d{4}-\d{2}-\d{2}$'),
+  done        boolean not null default false,
+  updated_at  bigint not null default (extract(epoch from now()) * 1000)::bigint
+);
+create index if not exists events_user_idx on public.events (user_id, date);
+
 -- ───────── read-only share links ─────────
 create table if not exists public.shares (
   token       text primary key,
@@ -66,13 +77,14 @@ create table if not exists public.ai_usage (
 alter table public.notes    enable row level security;
 alter table public.links    enable row level security;
 alter table public.cards    enable row level security;
+alter table public.events   enable row level security;
 alter table public.shares   enable row level security;
 alter table public.ai_usage enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['notes', 'links', 'cards', 'shares'] loop
+  foreach t in array array['notes', 'links', 'cards', 'events', 'shares'] loop
     execute format('drop policy if exists "%1$s_select_own" on public.%1$s', t);
     execute format('drop policy if exists "%1$s_insert_own" on public.%1$s', t);
     execute format('drop policy if exists "%1$s_update_own" on public.%1$s', t);

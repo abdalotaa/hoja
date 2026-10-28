@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { TONES, TONE_LABEL, type Note } from "@/lib/notes";
+import TableEditor from "./TableEditor";
 import { downloadIcs, extractEvents } from "@/lib/calendar";
+import { downloadCsv, parseTable } from "@/lib/table";
 
 export type NoteAction = "summarize" | "map" | "cards";
 
@@ -24,6 +26,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
   const nodeRef = useRef<HTMLTextAreaElement>(null);
   const origin = useRef({ px: 0, py: 0, x: 0, y: 0, w: 0, h: 0 });
   const isNode = note.kind === "node";
+  const isTable = note.kind === "table";
 
   useEffect(() => {
     if (active && !note.title && !note.text) (isNode ? nodeRef : titleRef).current?.focus();
@@ -132,18 +135,27 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
           aria-label="Título de la nota"
           onChange={(e) => onChange(note.id, { title: e.target.value })}
         />
-        <textarea
-          className="note-text"
-          value={note.text}
-          placeholder="Escribe aquí…"
-          aria-label="Contenido de la nota"
-          onChange={(e) => onChange(note.id, { text: e.target.value })}
-        />
+        {isTable ? (
+          <TableEditor value={note.text} onChange={(text) => onChange(note.id, { text })} />
+        ) : (
+          <textarea
+            className="note-text"
+            value={note.text}
+            placeholder="Escribe aquí…"
+            aria-label="Contenido de la nota"
+            onChange={(e) => onChange(note.id, { text: e.target.value })}
+          />
+        )}
         <div className="note-foot">
           <button className="tag" data-tone={note.tone} onClick={cycleTone} title="Cambiar etiqueta">
             {TONE_LABEL[note.tone]}
           </button>
           <span className="spacer" />
+          {isTable ? (
+            <button className="tag ai" onClick={() => downloadCsv(parseTable(note.text), note.title || "tabla")} title="Descargar como CSV (abre en Excel o Sheets)">
+              CSV ↓
+            </button>
+          ) : (
           <div className="ai-menu">
             <button
               className="tag ai"
@@ -173,6 +185,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
       {connector}
