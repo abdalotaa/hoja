@@ -1,12 +1,11 @@
-/** Guards for /api/summarize: only Hoja's own pages may call it, and only with note-sized input. */
+/** Guards for /api/ai: only Hoja's own pages may call it, with a bounded body and per-person rate limits. */
 
 export const CLIENT_HEADER = "x-hoja-client";
-export const MAX_NOTE_CHARS = 12_000;
-const MAX_BODY_BYTES = 40_000;
+const MAX_BODY_BYTES = 60_000;
 
-const PER_MINUTE = 8;
-const PER_DAY = 60;
-const GLOBAL_PER_DAY = 600;
+const PER_MINUTE = 10;
+const PER_DAY = 120;
+const GLOBAL_PER_DAY = 1500;
 const DAY = 24 * 60 * 60 * 1000;
 
 const hits = new Map<string, number[]>();
@@ -38,68 +37,51 @@ function isFromApp(request: Request): boolean {
 
 function overLimit(request: Request, userId?: string): boolean {
   const now = Date.now();
-  const ip = userId ? `user:${userId}` : clientIp(request);
+  const key = userId ? `user:${userId}` : clientIp(request);
 
   globalHits = globalHits.filter((t) => now - t < DAY);
   if (globalHits.length >= GLOBAL_PER_DAY) return true;
 
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < DAY);
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < DAY);
   const lastMinute = recent.filter((t) => now - t < 60_000).length;
   if (recent.length >= PER_DAY || lastMinute >= PER_MINUTE) {
-    hits.set(ip, recent);
+    hits.set(key, recent);
     return true;
   }
 
   recent.push(now);
-  hits.set(ip, recent);
+  hits.set(key, recent);
   globalHits.push(now);
 
   if (hits.size > 5000) {
-    for (const [key, times] of hits) if (!times.some((t) => now - t < DAY)) hits.delete(key);
+    for (const [k, times] of hits) if (!times.some((t) => now - t < DAY)) hits.delete(k);
   }
   return false;
 }
 
-export type GuardResult = { ok: true; text: string } | { ok: false; status: number; error: string };
+export type GuardResult = { ok: true; body: Record<string, unknown> } | { ok: false; status: number; error: string };
 
-/** Runs every check before any paid call is made. */
-export async function guardSummarizeRequest(request: Request, userId?: string): Promise<GuardResult> {
-  if (!isFromApp(request)) {
-    return { ok: false, status: 403, error: "Solicitud no permitida." };
-  }
-  const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY_BYTES) {
-    return { ok: false, status: 413, error: "La nota es demasiado larga." };
+/** Runs every generic check before any paid call is made. Task-specific validation happens in the route. */
+export async function guardAiRequest(request: Request, userId?: string): Promise<GuardResult> {
+  if (!isFromApp(request)) return { ok: false, status: 403, error: "Solicitud no permitida." };
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    return { ok: false, status: 413, error: "El contenido es demasiado largo." };
   }
   if (overLimit(request, userId)) {
-    return { ok: false, status: 429, error: "Has usado muchos resúmenes. Intenta más tarde." };
+    return { ok: false, status: 429, error: "Has usado muchas funciones de IA. Intenta en un momento." };
   }
 
   const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) {
-    return { ok: false, status: 413, error: "La nota es demasiado larga." };
-  }
+  if (raw.length > MAX_BODY_BYTES) return { ok: false, status: 413, error: "El contenido es demasiado largo." };
+
   let body: unknown;
   try {
     body = JSON.parse(raw);
   } catch {
     return { ok: false, status: 400, error: "Solicitud inválida." };
   }
-
-  // The body must be exactly { text: string }: no extra fields, nothing to steer the model with.
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, status: 400, error: "Solicitud inválida." };
   }
-  const keys = Object.keys(body);
-  const text = (body as { text?: unknown }).text;
-  if (keys.length !== 1 || keys[0] !== "text" || typeof text !== "string") {
-    return { ok: false, status: 400, error: "Solicitud inválida." };
-  }
-
-  const trimmed = text.trim();
-  if (trimmed.length < 20) return { ok: false, status: 400, error: "Muy poco texto para resumir." };
-  if (trimmed.length > MAX_NOTE_CHARS) {
-    return { ok: false, status: 413, error: `Las notas largas se dividen: máximo ${MAX_NOTE_CHARS.toLocaleString("es-MX")} caracteres.` };
-  }
-  return { ok: true, text: trimmed };
+  return { ok: true, body: body as Record<string, unknown> };
 }

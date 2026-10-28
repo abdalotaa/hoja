@@ -1,53 +1,41 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import NoteWindow from "./NoteWindow";
-import { deleteCloudNote, loadCloudNotes, saveCloudNotes } from "@/lib/cloud";
-import { loadNotes, newNote, saveNotes, type Note } from "@/lib/notes";
-import { extractOriginal, formatSummary, summarize } from "@/lib/summarize";
+import AppBar from "./AppBar";
+import LinksLayer from "./LinksLayer";
+import NoteWindow, { type NoteAction } from "./NoteWindow";
+import { ai, extractOriginal, formatSummary } from "@/lib/ai";
+import { buildMindMap } from "@/lib/mindmap";
+import { CARDS, LINKS, NOTES, type Card } from "@/lib/model";
+import { newNote, type Note } from "@/lib/notes";
 import { useSpeech } from "@/lib/useSpeech";
+import { useSynced } from "@/lib/useSynced";
 
 export default function Canvas({ userEmail }: { userEmail?: string }) {
   const cloud = Boolean(userEmail);
-  const synced = useRef(new Map<string, number>());
-  const [syncError, setSyncError] = useState(false);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [ready, setReady] = useState(false);
+  const notesStore = useSynced(NOTES, cloud);
+  const linksStore = useSynced(LINKS, cloud);
+  const cardsStore = useSynced(CARDS, cloud);
+  const { items: notes, setItems: setNotes } = notesStore;
+  const { items: links, setItems: setLinks } = linksStore;
+  const ready = notesStore.ready && linksStore.ready;
+  const syncError = notesStore.error || linksStore.error || cardsStore.error;
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<Map<string, NoteAction>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ fromId: string; x: number; y: number } | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLElement>(null);
   const topZ = useRef(1);
   const speech = useSpeech("es-MX");
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      let saved = loadNotes();
-      if (cloud) {
-        try {
-          const remote = await loadCloudNotes();
-          if (remote.length === 0 && saved.length > 0) {
-            // First login on this browser: move the local notes to the account.
-            await saveCloudNotes(saved);
-            saveNotes([]);
-          } else {
-            saved = remote;
-          }
-          saved.forEach((n) => synced.current.set(n.id, n.updatedAt));
-        } catch {
-          setSyncError(true);
-        }
-      }
-      if (cancelled) return;
-      topZ.current = saved.reduce((m, n) => Math.max(m, n.z), 1);
-      setNotes(saved);
-      setReady(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [cloud]);
+    if (ready) topZ.current = Math.max(topZ.current, ...notes.map((n) => n.z), 1);
+    // only when loading finishes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   useEffect(() => {
     if (!notice) return;
@@ -55,52 +43,49 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     return () => clearTimeout(t);
   }, [notice]);
 
-  useEffect(() => {
-    if (!ready) return;
-    if (!cloud) {
-      saveNotes(notes);
-      return;
-    }
-    const pending = notes.filter((n) => synced.current.get(n.id) !== n.updatedAt);
-    if (pending.length === 0) return;
-    const t = setTimeout(() => {
-      saveCloudNotes(pending)
-        .then(() => {
-          pending.forEach((n) => synced.current.set(n.id, n.updatedAt));
-          setSyncError(false);
-        })
-        .catch(() => setSyncError(true));
-    }, 700);
-    return () => clearTimeout(t);
-  }, [notes, ready, cloud]);
-
-  const add = useCallback(() => {
-    const note = newNote(notes.length, ++topZ.current);
-    setNotes((all) => [...all, note]);
-    setActiveId(note.id);
+  /** A free spot near what the person is looking at. */
+  const viewportSpot = useCallback(() => {
+    const c = canvasRef.current;
+    return { x: (c?.scrollLeft ?? 0) + 70 + (notes.length % 6) * 36, y: (c?.scrollTop ?? 0) + 60 + (notes.length % 6) * 36 };
   }, [notes.length]);
 
-  const change = useCallback((id: string, patch: Partial<Note>) => {
-    setNotes((all) => all.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: Date.now() } : n)));
-  }, []);
+  const add = useCallback(() => {
+    const note = newNote(notes.length, ++topZ.current, viewportSpot());
+    setNotes((all) => [...all, note]);
+    setActiveId(note.id);
+  }, [notes.length, setNotes, viewportSpot]);
 
-  const focus = useCallback((id: string) => {
-    setActiveId(id);
-    setNotes((all) => all.map((n) => (n.id === id && n.z < topZ.current ? { ...n, z: ++topZ.current, updatedAt: Date.now() } : n)));
-  }, []);
+  const change = useCallback(
+    (id: string, patch: Partial<Note>) => {
+      setNotes((all) => all.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: Date.now() } : n)));
+    },
+    [setNotes],
+  );
 
-  const remove = useCallback((id: string) => {
-    setNotes((all) => all.filter((n) => n.id !== id));
-    if (cloud) {
-      synced.current.delete(id);
-      deleteCloudNote(id).catch(() => setSyncError(true));
-    }
-  }, [cloud]);
+  const focus = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      setNotes((all) =>
+        all.map((n) => (n.id === id && n.z < topZ.current ? { ...n, z: ++topZ.current, updatedAt: Date.now() } : n)),
+      );
+    },
+    [setNotes],
+  );
 
-  const markBusy = useCallback((id: string, on: boolean) => {
+  const removeLinks = linksStore.remove;
+  const removeNotes = notesStore.remove;
+  const remove = useCallback(
+    (id: string) => {
+      removeNotes([id]);
+      removeLinks(links.filter((l) => l.from === id || l.to === id).map((l) => l.id));
+    },
+    [removeNotes, removeLinks, links],
+  );
+
+  const setBusyFor = useCallback((id: string, action: NoteAction | null) => {
     setBusy((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
+      const next = new Map(prev);
+      if (action) next.set(id, action);
       else next.delete(id);
       return next;
     });
@@ -108,11 +93,11 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
 
   const runSummary = useCallback(
     async (id: string, text: string, setTitle: boolean) => {
-      markBusy(id, true);
+      setBusyFor(id, "summarize");
       setNotice(null);
       const original = extractOriginal(text);
       try {
-        const result = await summarize(original);
+        const result = await ai("summarize", { text: original });
         setNotes((all) =>
           all.map((n) =>
             n.id === id
@@ -123,10 +108,104 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       } catch (e) {
         setNotice(e instanceof Error ? e.message : "No se pudo resumir.");
       } finally {
-        markBusy(id, false);
+        setBusyFor(id, null);
       }
     },
-    [markBusy],
+    [setBusyFor, setNotes],
+  );
+
+  const expandMap = useCallback(
+    async (note: Note) => {
+      setBusyFor(note.id, "map");
+      setNotice(null);
+      try {
+        const source = extractOriginal(`${note.title}\n${note.text}`).trim();
+        const map = await ai("mindmap", { text: source });
+        const origin = { x: note.x + note.w + 110, y: Math.max(40, note.y) };
+        const built = buildMindMap(map, origin, topZ.current + 1);
+        topZ.current += built.nodes.length;
+        const rootLink = { id: crypto.randomUUID(), from: note.id, to: built.nodes[0].id, updatedAt: Date.now() };
+        setNotes((all) => [...all, ...built.nodes]);
+        setLinks((all) => [...all, rootLink, ...built.links]);
+        canvasRef.current?.scrollTo({ left: Math.max(0, origin.x - 120), top: Math.max(0, origin.y - 80), behavior: "smooth" });
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "No se pudo crear el mapa.");
+      } finally {
+        setBusyFor(note.id, null);
+      }
+    },
+    [setBusyFor, setNotes, setLinks],
+  );
+
+  const makeCards = useCallback(
+    async (note: Note) => {
+      setBusyFor(note.id, "cards");
+      setNotice(null);
+      try {
+        const source = extractOriginal(`${note.title}\n${note.text}`).trim();
+        const result = await ai("flashcards", { text: source });
+        const now = Date.now();
+        const fresh: Card[] = result.cards.map((c) => ({
+          id: crypto.randomUUID(),
+          noteId: note.id,
+          front: c.front,
+          back: c.back,
+          due: now,
+          interval: 0,
+          ease: 2.5,
+          reps: 0,
+          updatedAt: now,
+        }));
+        cardsStore.setItems((all) => [...all, ...fresh]);
+        setNotice(`Creé ${fresh.length} tarjetas. Repásalas en Estudio.`);
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "No se pudieron crear las tarjetas.");
+      } finally {
+        setBusyFor(note.id, null);
+      }
+    },
+    [setBusyFor, cardsStore],
+  );
+
+  const onAction = useCallback(
+    (id: string, action: NoteAction) => {
+      const note = notes.find((n) => n.id === id);
+      if (!note) return;
+      if (action === "summarize") void runSummary(id, note.text, false);
+      if (action === "map") void expandMap(note);
+      if (action === "cards") void makeCards(note);
+    },
+    [notes, runSummary, expandMap, makeCards],
+  );
+
+  // Dragging a connection from one note to another.
+  const startConnect = useCallback(
+    (fromId: string, e: React.PointerEvent) => {
+      const board = boardRef.current;
+      if (!board) return;
+      const toBoard = (ev: PointerEvent) => {
+        const r = board.getBoundingClientRect();
+        return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      };
+      setDraft({ fromId, ...toBoard(e.nativeEvent) });
+      const move = (ev: PointerEvent) => setDraft({ fromId, ...toBoard(ev) });
+      const up = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        setDraft(null);
+        const target = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-note-id]");
+        const toId = target?.dataset.noteId;
+        if (!toId || toId === fromId) return;
+        setLinks((all) =>
+          all.some((l) => (l.from === fromId && l.to === toId) || (l.from === toId && l.to === fromId))
+            ? all
+            : [...all, { id: crypto.randomUUID(), from: fromId, to: toId, updatedAt: Date.now() }],
+        );
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [setLinks],
   );
 
   const toggleDictation = useCallback(() => {
@@ -137,28 +216,25 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     speech.stop();
     const transcript = `${speech.finalText} ${speech.interim}`.trim();
     if (!transcript) return;
-    const note = newNote(notes.length, ++topZ.current);
+    const note = newNote(notes.length, ++topZ.current, viewportSpot());
     note.title = "Nota de voz";
     note.text = transcript;
     setNotes((all) => [...all, note]);
     setActiveId(note.id);
     if (transcript.length >= 20) void runSummary(note.id, transcript, true);
-  }, [speech, notes.length, runSummary]);
+  }, [speech, notes.length, runSummary, setNotes, viewportSpot]);
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(
     () => (q ? notes.filter((n) => `${n.title} ${n.text}`.toLowerCase().includes(q)) : notes),
     [notes, q],
   );
+  const shownIds = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
+  const shownLinks = useMemo(() => links.filter((l) => shownIds.has(l.from) && shownIds.has(l.to)), [links, shownIds]);
 
   return (
     <div className="app">
-      <header className="bar">
-        <div className="brand">
-          <img src="/m4-symbol.svg" alt="" width={26} height={26} />
-          Hoja
-        </div>
-        <span className="spacer" />
+      <AppBar current="lienzo" userEmail={userEmail}>
         {syncError && (
           <span className="mono" style={{ color: "var(--accent)" }} role="status">
             sin conexión
@@ -181,22 +257,27 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         <button className="btn" onClick={add}>
           + Nueva nota
         </button>
-        {userEmail && (
-          <form action="/auth/signout" method="post" className="who-form">
-            <span className="who" title={userEmail}>
-              {userEmail}
-            </span>
-            <button className="btn line" type="submit">
-              Salir
-            </button>
-          </form>
-        )}
-      </header>
+      </AppBar>
 
-      <main className="canvas" onPointerDown={(e) => e.target === e.currentTarget && setActiveId(null)}>
-        <div className="board" onPointerDown={(e) => e.target === e.currentTarget && setActiveId(null)}>
+      <main
+        ref={canvasRef}
+        className="canvas"
+        onPointerDown={(e) => (e.target === e.currentTarget || e.target === boardRef.current) && setActiveId(null)}
+      >
+        <div className="board" ref={boardRef}>
+          <LinksLayer notes={visible} links={shownLinks} draft={draft} onRemove={(id) => removeLinks([id])} />
           {visible.map((n) => (
-            <NoteWindow key={n.id} note={n} active={n.id === activeId} onChange={change} onFocus={focus} onDelete={remove} onSummarize={(id, text) => runSummary(id, text, false)} summarizing={busy.has(n.id)} />
+            <NoteWindow
+              key={n.id}
+              note={n}
+              active={n.id === activeId}
+              busy={busy.get(n.id) ?? null}
+              onChange={change}
+              onFocus={focus}
+              onDelete={remove}
+              onAction={onAction}
+              onConnect={startConnect}
+            />
           ))}
         </div>
         {(speech.listening || speech.error || notice) && (
@@ -205,9 +286,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               <i className="dot close" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
-              <span className="note-label mono">
-                {speech.listening ? "escuchando" : "aviso"}
-              </span>
+              <span className="note-label mono">{speech.listening ? "escuchando" : "aviso"}</span>
             </div>
             <p className="live-text">
               {speech.listening ? (
@@ -216,7 +295,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
                   {!speech.finalText && !speech.interim && <span className="live-interim">Habla, te escucho…</span>}
                 </>
               ) : (
-                speech.error ?? notice
+                (speech.error ?? notice)
               )}
             </p>
           </aside>

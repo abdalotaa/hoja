@@ -5,6 +5,8 @@ export interface Note {
   title: string;
   text: string;
   tone: Tone;
+  /** "node" is a compact mind-map bubble; omitted means a regular note. */
+  kind?: "note" | "node";
   x: number;
   y: number;
   w: number;
