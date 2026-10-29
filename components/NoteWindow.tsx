@@ -18,10 +18,11 @@ interface Props {
   onAction: (id: string, action: NoteAction) => void;
   onConnect: (id: string, e: React.PointerEvent) => void;
   zoom?: number;
+  dragging?: boolean;
+  onDragStart: (id: string, e: React.PointerEvent) => void;
 }
 
-export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1 }: Props) {
-  const [dragging, setDragging] = useState(false);
+export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1, dragging = false, onDragStart }: Props) {
   const [menu, setMenu] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const nodeRef = useRef<HTMLTextAreaElement>(null);
@@ -42,15 +43,8 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
   };
   const drag = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button, textarea, input")) return;
-    start(e);
-    setDragging(true);
+    onDragStart(note.id, e);
   };
-  const move = (e: React.PointerEvent) => {
-    if (!dragging) return;
-    const o = origin.current;
-    onChange(note.id, { x: Math.max(0, o.x + (e.clientX - o.px) / zoom), y: Math.max(0, o.y + (e.clientY - o.py) / zoom) });
-  };
-  const stop = () => setDragging(false);
 
   const resize = (e: React.PointerEvent) => {
     start(e);
@@ -90,9 +84,6 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
         data-dragging={dragging}
         style={{ left: note.x, top: note.y, width: note.w, minHeight: note.h, zIndex: note.z }}
         onPointerDown={drag}
-        onPointerMove={move}
-        onPointerUp={stop}
-        onPointerCancel={stop}
       >
         <span className="node-grip" aria-hidden="true" />
         <textarea
@@ -121,7 +112,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
       style={{ left: note.x, top: note.y, width: note.w, height: note.h, zIndex: note.z }}
       onPointerDown={() => onFocus(note.id)}
     >
-      <header className="note-bar" onPointerDown={drag} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop}>
+      <header className="note-bar" onPointerDown={drag}>
         <button className="dot close" aria-label="Borrar nota" onClick={() => onDelete(note.id)} />
         <i className="dot" aria-hidden="true" />
         <i className="dot" aria-hidden="true" />

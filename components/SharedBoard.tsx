@@ -5,7 +5,11 @@ import type { Link } from "@/lib/model";
 import type { Note } from "@/lib/notes";
 
 /** A read-only view of a shared canvas. */
-export default function SharedBoard({ title, notes, links }: { title: string; notes: Note[]; links: Link[] }) {
+export default function SharedBoard({ title, notes: raw, links }: { title: string; notes: Note[]; links: Link[] }) {
+  // Notes may sit at negative coordinates on the (borderless) canvas: shift them into view.
+  const dx = raw.length ? 60 - Math.min(...raw.map((n) => n.x)) : 0;
+  const dy = raw.length ? 60 - Math.min(...raw.map((n) => n.y)) : 0;
+  const notes = raw.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy }));
   return (
     <div className="app">
       <header className="bar">

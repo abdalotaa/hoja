@@ -11,7 +11,8 @@ import { exportJson, exportMarkdown } from "@/lib/export";
 import { createShare, stopSharing } from "@/lib/share";
 import { TEMPLATES, buildTemplate, templateSize } from "@/lib/templates";
 import { buildMindMap } from "@/lib/mindmap";
-import { boardSize, freeSpot } from "@/lib/placement";
+import { arrange } from "@/lib/arrange";
+import { freeSpot, worldOf } from "@/lib/placement";
 import { CARDS, LINKS, NOTES, type Card } from "@/lib/model";
 import { newNote, type Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
@@ -59,16 +60,55 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   }, [notice]);
 
   const rects = useMemo(() => notes.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h })), [notes]);
-  const board = useMemo(() => boardSize(rects), [rects]);
+  const world = useMemo(() => worldOf(rects), [rects]);
+  const originRef = useRef({ x: world.ox, y: world.oy });
+  const prevOrigin = useRef<{ x: number; y: number } | null>(null);
+
+  // The board grows in every direction. When its top-left corner moves, keep what you're looking at in place.
+  useLayoutEffect(() => {
+    const c = canvasRef.current;
+    const prev = prevOrigin.current;
+    if (prev && c && (prev.x !== world.ox || prev.y !== world.oy)) {
+      c.scrollLeft += (prev.x - world.ox) * zoomRef.current;
+      c.scrollTop += (prev.y - world.oy) * zoomRef.current;
+    }
+    prevOrigin.current = { x: world.ox, y: world.oy };
+    originRef.current = { x: world.ox, y: world.oy };
+  }, [world.ox, world.oy]);
+
+  /** Scrolls so the given board point is near the top-left of the view. */
+  const scrollToWorld = useCallback((x: number, y: number, margin = 60, smooth = true) => {
+    const c = canvasRef.current;
+    if (!c) return;
+    c.scrollTo({
+      left: (x - originRef.current.x) * zoomRef.current - margin,
+      top: (y - originRef.current.y) * zoomRef.current - margin,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }, []);
+
+  // When the notes finish loading, start looking at them (not at an empty corner of the board).
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const x = rects.length ? Math.min(...rects.map((r) => r.x)) : 0;
+    const y = rects.length ? Math.min(...rects.map((r) => r.y)) : 0;
+    scrollToWorld(x, y, 60, false);
+    // only when loading finishes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   /** A free spot for a block of this size, as close as possible to what the person is looking at. */
   const spotFor = useCallback(
     (size: { w: number; h: number }, near?: { x: number; y: number }) => {
       const c = canvasRef.current;
-      const preferred = near ?? { x: ((c?.scrollLeft ?? 0) + 60) / zoomRef.current, y: ((c?.scrollTop ?? 0) + 50) / zoomRef.current };
-      return freeSpot(rects, size, preferred, board);
+      const z = zoomRef.current;
+      const preferred = near ?? {
+        x: originRef.current.x + ((c?.scrollLeft ?? 0) + 60) / z,
+        y: originRef.current.y + ((c?.scrollTop ?? 0) + 50) / z,
+      };
+      return freeSpot(rects, size, preferred);
     },
-    [rects, board],
+    [rects],
   );
   const viewportSpot = useCallback(() => spotFor({ w: 320, h: 260 }), [spotFor]);
 
@@ -154,14 +194,14 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         const rootLink = { id: crypto.randomUUID(), from: note.id, to: built.nodes[0].id, updatedAt: Date.now() };
         setNotes((all) => [...all, ...built.nodes]);
         setLinks((all) => [...all, rootLink, ...built.links]);
-        canvasRef.current?.scrollTo({ left: Math.max(0, origin.x * zoomRef.current - 120), top: Math.max(0, origin.y * zoomRef.current - 80), behavior: "smooth" });
+        setTimeout(() => scrollToWorld(origin.x, origin.y, 120), 80);
       } catch (e) {
         setNotice(e instanceof Error ? e.message : "No se pudo crear el mapa.");
       } finally {
         setBusyFor(note.id, null);
       }
     },
-    [setBusyFor, setNotes, setLinks, spotFor],
+    [setBusyFor, setNotes, setLinks, spotFor, scrollToWorld],
   );
 
   const makeCards = useCallback(
@@ -212,7 +252,10 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       if (!board) return;
       const toBoard = (ev: PointerEvent) => {
         const r = board.getBoundingClientRect();
-        return { x: (ev.clientX - r.left) / zoomRef.current, y: (ev.clientY - r.top) / zoomRef.current };
+        return {
+          x: originRef.current.x + (ev.clientX - r.left) / zoomRef.current,
+          y: originRef.current.y + (ev.clientY - r.top) / zoomRef.current,
+        };
       };
       setDraft({ fromId, ...toBoard(e.nativeEvent) });
       const move = (ev: PointerEvent) => setDraft({ fromId, ...toBoard(ev) });
@@ -260,21 +303,30 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   );
 
   /** Shows every note at once. */
-  const fit = useCallback(() => {
-    const c = canvasRef.current;
-    if (!c || rects.length === 0) return;
-    const left = Math.min(...rects.map((r) => r.x));
-    const top = Math.min(...rects.map((r) => r.y));
-    const w = Math.max(...rects.map((r) => r.x + r.w)) - left;
-    const h = Math.max(...rects.map((r) => r.y + r.h)) - top;
-    const next = Math.min(1, Math.max(0.25, Math.min((c.clientWidth - 100) / w, (c.clientHeight - 100) / h)));
-    afterZoom.current = (el) => {
-      el.scrollLeft = left * next - 50;
-      el.scrollTop = top * next - 50;
-    };
-    zoomRef.current = next;
-    setZoom(next);
-  }, [rects]);
+  const fit = useCallback(
+    (list: { x: number; y: number; w: number; h: number }[] = rects) => {
+      const c = canvasRef.current;
+      if (!c || list.length === 0) return;
+      const left = Math.min(...list.map((r) => r.x));
+      const top = Math.min(...list.map((r) => r.y));
+      const w = Math.max(...list.map((r) => r.x + r.w)) - left;
+      const h = Math.max(...list.map((r) => r.y + r.h)) - top;
+      const next = Math.min(1, Math.max(0.25, Math.min((c.clientWidth - 100) / w, (c.clientHeight - 100) / h)));
+      const place = (el: HTMLElement) => {
+        // Center the group of notes in the view.
+        el.scrollLeft = (left + w / 2 - originRef.current.x) * next - el.clientWidth / 2;
+        el.scrollTop = (top + h / 2 - originRef.current.y) * next - el.clientHeight / 2;
+      };
+      if (next === zoomRef.current) {
+        place(c);
+        return;
+      }
+      afterZoom.current = place;
+      zoomRef.current = next;
+      setZoom(next);
+    },
+    [rects],
+  );
 
   // After the board resizes for the new zoom, restore the scroll position computed above.
   useLayoutEffect(() => {
@@ -298,6 +350,95 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     c.addEventListener("wheel", onWheel, { passive: false });
     return () => c.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
+
+  // Dragging a note: its position follows the pointer in board coordinates, and the view
+  // scrolls on its own when the pointer nears an edge, so you can carry a note anywhere.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const startDrag = useCallback(
+    (id: string, e: React.PointerEvent) => {
+      const c = canvasRef.current;
+      const note = notes.find((n) => n.id === id);
+      if (!c || !note || e.button !== 0) return;
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      focus(id);
+      setDraggingId(id);
+
+      const toWorld = (cx: number, cy: number) => {
+        const r = c.getBoundingClientRect();
+        const z = zoomRef.current;
+        return {
+          x: originRef.current.x + (c.scrollLeft + cx - r.left) / z,
+          y: originRef.current.y + (c.scrollTop + cy - r.top) / z,
+        };
+      };
+      const start = toWorld(e.clientX, e.clientY);
+      const grab = { x: start.x - note.x, y: start.y - note.y };
+      let last = { x: e.clientX, y: e.clientY };
+      let raf = 0;
+
+      const apply = () => {
+        const p = toWorld(last.x, last.y);
+        change(id, { x: Math.round(p.x - grab.x), y: Math.round(p.y - grab.y) });
+      };
+      const move = (ev: PointerEvent) => {
+        last = { x: ev.clientX, y: ev.clientY };
+        apply();
+      };
+      const EDGE = 64;
+      const tick = () => {
+        const r = c.getBoundingClientRect();
+        const push = (d: number) => (d < EDGE ? Math.min(1, (EDGE - d) / EDGE) * 22 : 0);
+        const dx = push(last.x - r.left) * -1 + push(r.right - last.x);
+        const dy = push(last.y - r.top) * -1 + push(r.bottom - last.y);
+        if (dx || dy) {
+          c.scrollLeft += dx;
+          c.scrollTop += dy;
+          apply();
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        cancelAnimationFrame(raf);
+        setDraggingId(null);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+      raf = requestAnimationFrame(tick);
+    },
+    [notes, focus, change],
+  );
+
+  // Tidy up: pack everything into neat rows (connected notes stay together) and center the view.
+  const [undo, setUndo] = useState<Map<string, { x: number; y: number }> | null>(null);
+  const tidy = useCallback(() => {
+    if (notes.length === 0) return;
+    const target = arrange(notes, links);
+    const before = new Map(notes.map((n) => [n.id, { x: n.x, y: n.y }]));
+    const now = Date.now();
+    setNotes((all) => all.map((n) => (target.has(n.id) ? { ...n, ...target.get(n.id)!, updatedAt: now } : n)));
+    setUndo(before);
+    const moved = notes.map((n) => ({ ...n, ...(target.get(n.id) ?? {}) }));
+    setTimeout(() => fit(moved), 80);
+  }, [notes, links, setNotes, fit]);
+
+  const undoTidy = useCallback(() => {
+    if (!undo) return;
+    const now = Date.now();
+    setNotes((all) => all.map((n) => (undo.has(n.id) ? { ...n, ...undo.get(n.id)!, updatedAt: now } : n)));
+    const restored = notes.map((n) => ({ ...n, ...(undo.get(n.id) ?? {}) }));
+    setUndo(null);
+    setTimeout(() => fit(restored), 80);
+  }, [undo, notes, setNotes, fit]);
+
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 10000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   // Drag the empty canvas to move around it (mouse and pen; touch already scrolls natively).
   const panStart = (e: React.PointerEvent<HTMLElement>) => {
@@ -383,9 +524,9 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       });
       topZ.current += fresh.length;
       setNotes((all) => [...all, ...fresh]);
-      canvasRef.current?.scrollTo({ left: Math.max(0, origin.x * zoomRef.current - 60), top: Math.max(0, origin.y * zoomRef.current - 60), behavior: "smooth" });
+      setTimeout(() => scrollToWorld(origin.x, origin.y), 80);
     },
-    [setNotes, spotFor],
+    [setNotes, spotFor, scrollToWorld],
   );
 
   const openNote = useCallback(
@@ -394,9 +535,9 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       if (!n) return;
       setQuery("");
       focus(id);
-      canvasRef.current?.scrollTo({ left: Math.max(0, n.x * zoomRef.current - 80), top: Math.max(0, n.y * zoomRef.current - 80), behavior: "smooth" });
+      scrollToWorld(n.x, n.y, 80);
     },
-    [notes, focus],
+    [notes, focus, scrollToWorld],
   );
 
   const share = useCallback(async () => {
@@ -500,14 +641,22 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         <div
           className="board-frame"
           ref={frameRef}
-          style={{ width: board.w * zoom, height: board.h * zoom, "--zoom": zoom } as React.CSSProperties}
+          style={
+            {
+              width: world.w * zoom,
+              height: world.h * zoom,
+              "--zoom": zoom,
+              backgroundPosition: `${((((-world.ox) % 56) + 56) % 56) * zoom}px ${((((-world.oy) % 56) + 56) % 56) * zoom}px`,
+            } as React.CSSProperties
+          }
         >
         <div
           className="board"
           ref={boardRef}
-          style={{ width: board.w, height: board.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+          style={{ width: world.w, height: world.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
         >
-          <LinksLayer notes={visible} links={shownLinks} draft={draft} width={board.w} height={board.h} onRemove={(id) => removeLinks([id])} />
+        <div className="world" style={{ left: -world.ox, top: -world.oy }}>
+          <LinksLayer notes={visible} links={shownLinks} draft={draft} onRemove={(id) => removeLinks([id])} />
           {visible.map((n) => (
             <NoteWindow
               key={n.id}
@@ -520,8 +669,11 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               onAction={onAction}
               onConnect={startConnect}
               zoom={zoom}
+              dragging={draggingId === n.id}
+              onDragStart={startDrag}
             />
           ))}
+        </div>
         </div>
         </div>
         {(speech.listening || speech.error || notice) && (
@@ -554,10 +706,19 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           <button onClick={() => zoomAt(1.25)} aria-label="Acercar" disabled={zoom >= 2}>
             +
           </button>
-          <button className="zoom-fit" onClick={fit} disabled={notes.length === 0} title="Ver todas las notas">
+          <button className="zoom-fit" onClick={() => fit()} disabled={notes.length === 0} title="Ver todas las notas">
             Ajustar
           </button>
+          <button className="zoom-fit" onClick={tidy} disabled={notes.length < 2} title="Acomoda las notas en filas ordenadas y centra la vista">
+            Ordenar
+          </button>
         </div>
+        {undo && (
+          <div className="toast" role="status">
+            Notas ordenadas.
+            <button onClick={undoTidy}>Deshacer</button>
+          </div>
+        )}
         {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
         {ready && notes.length === 0 && !speech.listening && (
           <div className="empty">
