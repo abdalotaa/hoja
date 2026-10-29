@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AppBar from "./AppBar";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
@@ -34,6 +34,10 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [mode, setMode] = useState<"note" | "meeting">("note");
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const afterZoom = useRef<((c: HTMLElement) => void) | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const [panning, setPanning] = useState(false);
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const [draft, setDraft] = useState<{ fromId: string; x: number; y: number } | null>(null);
@@ -61,7 +65,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const spotFor = useCallback(
     (size: { w: number; h: number }, near?: { x: number; y: number }) => {
       const c = canvasRef.current;
-      const preferred = near ?? { x: (c?.scrollLeft ?? 0) + 60, y: (c?.scrollTop ?? 0) + 50 };
+      const preferred = near ?? { x: ((c?.scrollLeft ?? 0) + 60) / zoomRef.current, y: ((c?.scrollTop ?? 0) + 50) / zoomRef.current };
       return freeSpot(rects, size, preferred, board);
     },
     [rects, board],
@@ -150,7 +154,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         const rootLink = { id: crypto.randomUUID(), from: note.id, to: built.nodes[0].id, updatedAt: Date.now() };
         setNotes((all) => [...all, ...built.nodes]);
         setLinks((all) => [...all, rootLink, ...built.links]);
-        canvasRef.current?.scrollTo({ left: Math.max(0, origin.x - 120), top: Math.max(0, origin.y - 80), behavior: "smooth" });
+        canvasRef.current?.scrollTo({ left: Math.max(0, origin.x * zoomRef.current - 120), top: Math.max(0, origin.y * zoomRef.current - 80), behavior: "smooth" });
       } catch (e) {
         setNotice(e instanceof Error ? e.message : "No se pudo crear el mapa.");
       } finally {
@@ -208,7 +212,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       if (!board) return;
       const toBoard = (ev: PointerEvent) => {
         const r = board.getBoundingClientRect();
-        return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        return { x: (ev.clientX - r.left) / zoomRef.current, y: (ev.clientY - r.top) / zoomRef.current };
       };
       setDraft({ fromId, ...toBoard(e.nativeEvent) });
       const move = (ev: PointerEvent) => setDraft({ fromId, ...toBoard(ev) });
@@ -231,9 +235,73 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     [setLinks],
   );
 
+  /** Zooms by a factor, keeping the board point under (mx, my) fixed on screen. */
+  const zoomAt = useCallback((factor: number, mx?: number, my?: number) => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const z = zoomRef.current;
+    const next = Math.min(2, Math.max(0.25, z * factor));
+    if (next === z) return;
+    const x = mx ?? c.clientWidth / 2;
+    const y = my ?? c.clientHeight / 2;
+    const px = (c.scrollLeft + x) / z;
+    const py = (c.scrollTop + y) / z;
+    afterZoom.current = (el) => {
+      el.scrollLeft = px * next - x;
+      el.scrollTop = py * next - y;
+    };
+    zoomRef.current = next;
+    setZoom(next);
+  }, []);
+
+  const setZoomTo = useCallback(
+    (value: number) => zoomAt(value / zoomRef.current),
+    [zoomAt],
+  );
+
+  /** Shows every note at once. */
+  const fit = useCallback(() => {
+    const c = canvasRef.current;
+    if (!c || rects.length === 0) return;
+    const left = Math.min(...rects.map((r) => r.x));
+    const top = Math.min(...rects.map((r) => r.y));
+    const w = Math.max(...rects.map((r) => r.x + r.w)) - left;
+    const h = Math.max(...rects.map((r) => r.y + r.h)) - top;
+    const next = Math.min(1, Math.max(0.25, Math.min((c.clientWidth - 100) / w, (c.clientHeight - 100) / h)));
+    afterZoom.current = (el) => {
+      el.scrollLeft = left * next - 50;
+      el.scrollTop = top * next - 50;
+    };
+    zoomRef.current = next;
+    setZoom(next);
+  }, [rects]);
+
+  // After the board resizes for the new zoom, restore the scroll position computed above.
+  useLayoutEffect(() => {
+    const c = canvasRef.current;
+    if (c && afterZoom.current) {
+      afterZoom.current(c);
+      afterZoom.current = null;
+    }
+  }, [zoom]);
+
+  // Ctrl/Cmd + wheel (and a trackpad pinch, which arrives as ctrl + wheel) zooms at the cursor.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = c.getBoundingClientRect();
+      zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX - r.left, e.clientY - r.top);
+    };
+    c.addEventListener("wheel", onWheel, { passive: false });
+    return () => c.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
   // Drag the empty canvas to move around it (mouse and pen; touch already scrolls natively).
   const panStart = (e: React.PointerEvent<HTMLElement>) => {
-    const onBackground = e.target === e.currentTarget || e.target === boardRef.current;
+    const onBackground = e.target === e.currentTarget || e.target === boardRef.current || e.target === frameRef.current;
     if (!onBackground) return;
     setActiveId(null);
     if (e.button !== 0 || e.pointerType === "touch") return;
@@ -315,7 +383,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       });
       topZ.current += fresh.length;
       setNotes((all) => [...all, ...fresh]);
-      canvasRef.current?.scrollTo({ left: Math.max(0, origin.x - 60), top: Math.max(0, origin.y - 60), behavior: "smooth" });
+      canvasRef.current?.scrollTo({ left: Math.max(0, origin.x * zoomRef.current - 60), top: Math.max(0, origin.y * zoomRef.current - 60), behavior: "smooth" });
     },
     [setNotes, spotFor],
   );
@@ -326,7 +394,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
       if (!n) return;
       setQuery("");
       focus(id);
-      canvasRef.current?.scrollTo({ left: Math.max(0, n.x - 80), top: Math.max(0, n.y - 80), behavior: "smooth" });
+      canvasRef.current?.scrollTo({ left: Math.max(0, n.x * zoomRef.current - 80), top: Math.max(0, n.y * zoomRef.current - 80), behavior: "smooth" });
     },
     [notes, focus],
   );
@@ -429,7 +497,16 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         onPointerUp={panEnd}
         onPointerCancel={panEnd}
       >
-        <div className="board" ref={boardRef} style={{ width: board.w, height: board.h }}>
+        <div
+          className="board-frame"
+          ref={frameRef}
+          style={{ width: board.w * zoom, height: board.h * zoom, "--zoom": zoom } as React.CSSProperties}
+        >
+        <div
+          className="board"
+          ref={boardRef}
+          style={{ width: board.w, height: board.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+        >
           <LinksLayer notes={visible} links={shownLinks} draft={draft} width={board.w} height={board.h} onRemove={(id) => removeLinks([id])} />
           {visible.map((n) => (
             <NoteWindow
@@ -442,8 +519,10 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               onDelete={remove}
               onAction={onAction}
               onConnect={startConnect}
+              zoom={zoom}
             />
           ))}
+        </div>
         </div>
         {(speech.listening || speech.error || notice) && (
           <aside className="live ds-win" role="status" aria-live="polite">
@@ -465,6 +544,20 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
             </p>
           </aside>
         )}
+        <div className="zoombar" role="group" aria-label="Zoom">
+          <button onClick={() => zoomAt(1 / 1.25)} aria-label="Alejar" disabled={zoom <= 0.25}>
+            −
+          </button>
+          <button className="zoom-pct" onClick={() => setZoomTo(1)} title="Volver al 100%">
+            {Math.round(zoom * 100)}%
+          </button>
+          <button onClick={() => zoomAt(1.25)} aria-label="Acercar" disabled={zoom >= 2}>
+            +
+          </button>
+          <button className="zoom-fit" onClick={fit} disabled={notes.length === 0} title="Ver todas las notas">
+            Ajustar
+          </button>
+        </div>
         {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
         {ready && notes.length === 0 && !speech.listening && (
           <div className="empty">

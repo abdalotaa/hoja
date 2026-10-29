@@ -17,9 +17,10 @@ interface Props {
   onDelete: (id: string) => void;
   onAction: (id: string, action: NoteAction) => void;
   onConnect: (id: string, e: React.PointerEvent) => void;
+  zoom?: number;
 }
 
-export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect }: Props) {
+export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1 }: Props) {
   const [dragging, setDragging] = useState(false);
   const [menu, setMenu] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -47,7 +48,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
   const move = (e: React.PointerEvent) => {
     if (!dragging) return;
     const o = origin.current;
-    onChange(note.id, { x: Math.max(0, o.x + e.clientX - o.px), y: Math.max(0, o.y + e.clientY - o.py) });
+    onChange(note.id, { x: Math.max(0, o.x + (e.clientX - o.px) / zoom), y: Math.max(0, o.y + (e.clientY - o.py) / zoom) });
   };
   const stop = () => setDragging(false);
 
@@ -58,7 +59,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
   const resizeMove = (e: React.PointerEvent) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     const o = origin.current;
-    onChange(note.id, { w: Math.max(220, o.w + e.clientX - o.px), h: Math.max(160, o.h + e.clientY - o.py) });
+    onChange(note.id, { w: Math.max(220, o.w + (e.clientX - o.px) / zoom), h: Math.max(160, o.h + (e.clientY - o.py) / zoom) });
   };
 
   const cycleTone = () => onChange(note.id, { tone: TONES[(TONES.indexOf(note.tone) + 1) % TONES.length] });
