@@ -421,3 +421,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .login-alt button:hover { color: var(--ink); }
 .who-link { font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 @media (max-width: 820px) { .who-link { display: none; } }
+
+/* ───────── pan the canvas by dragging the background ───────── */
+.pannable { cursor: grab; scrollbar-width: thin; scrollbar-color: var(--ink) var(--hover-bg); }
+.pannable[data-panning="true"] { cursor: grabbing; user-select: none; }
+.pannable[data-panning="true"] * { pointer-events: none; }
+.pannable .note, .pannable .node, .pannable .live, .pannable .ask { cursor: auto; }
+.pannable .note-bar { cursor: grab; }

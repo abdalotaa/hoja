@@ -34,6 +34,8 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [mode, setMode] = useState<"note" | "meeting">("note");
+  const [panning, setPanning] = useState(false);
+  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const [draft, setDraft] = useState<{ fromId: string; x: number; y: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
@@ -229,6 +231,34 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     [setLinks],
   );
 
+  // Drag the empty canvas to move around it (mouse and pen; touch already scrolls natively).
+  const panStart = (e: React.PointerEvent<HTMLElement>) => {
+    const onBackground = e.target === e.currentTarget || e.target === boardRef.current;
+    if (!onBackground) return;
+    setActiveId(null);
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    const c = canvasRef.current;
+    if (!c) return;
+    e.preventDefault(); // no text selection while dragging
+    (document.activeElement as HTMLElement | null)?.blur();
+    pan.current = { x: e.clientX, y: e.clientY, left: c.scrollLeft, top: c.scrollTop };
+    c.setPointerCapture(e.pointerId);
+    setPanning(true);
+  };
+  const panMove = (e: React.PointerEvent<HTMLElement>) => {
+    const p = pan.current;
+    const c = canvasRef.current;
+    if (!p || !c) return;
+    c.scrollLeft = p.left - (e.clientX - p.x);
+    c.scrollTop = p.top - (e.clientY - p.y);
+  };
+  const panEnd = (e: React.PointerEvent<HTMLElement>) => {
+    if (!pan.current) return;
+    pan.current = null;
+    setPanning(false);
+    canvasRef.current?.releasePointerCapture(e.pointerId);
+  };
+
   const toggleDictation = useCallback(
     (as: "note" | "meeting") => {
       if (!speech.listening) {
@@ -392,8 +422,12 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
 
       <main
         ref={canvasRef}
-        className="canvas"
-        onPointerDown={(e) => (e.target === e.currentTarget || e.target === boardRef.current) && setActiveId(null)}
+        className="canvas pannable"
+        data-panning={panning}
+        onPointerDown={panStart}
+        onPointerMove={panMove}
+        onPointerUp={panEnd}
+        onPointerCancel={panEnd}
       >
         <div className="board" ref={boardRef} style={{ width: board.w, height: board.h }}>
           <LinksLayer notes={visible} links={shownLinks} draft={draft} width={board.w} height={board.h} onRemove={(id) => removeLinks([id])} />
