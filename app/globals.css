@@ -210,11 +210,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ───────── nav, links, mind-map nodes ───────── */
 .tabs { display: flex; gap: 4px; margin-left: 6px; }
 .tabs a {
-  padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 700;
+  position: relative; padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 700;
   color: var(--ink); text-decoration: none; border: 2px solid transparent;
 }
 .tabs a:hover { background: var(--hover-bg); }
-.tabs a[aria-current="page"] { border-color: var(--ink); background: var(--paper); }
+.tabs a[aria-current="page"]:hover { background: transparent; }
+.tab-label { position: relative; z-index: 1; }
+.tab-pill { position: absolute; inset: -2px; border: 2px solid var(--ink); background: transparent; border-radius: 999px; }
 @media (max-width: 700px) { .tabs a { padding: 6px 10px; font-size: 13px; } .brand { display: none; } }
 
 .links { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; overflow: visible; }
@@ -459,3 +461,50 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .toast button { border: 2px solid var(--bg); background: transparent; color: var(--bg); border-radius: 999px; padding: 5px 14px; font-weight: 800; }
 .toast button:hover { background: var(--bg); color: var(--ink); }
+
+
+/* ───────── page transitions ───────── */
+/* The page background swaps instantly; the bar stays put; the active tab's pill glides. */
+::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-group(.appbar) { animation: none; }
+::view-transition-old(.appbar) { display: none; }
+::view-transition-new(.appbar) { animation: none; }
+::view-transition-group(.pill) { animation-duration: 520ms; animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+::view-transition-old(.pill) { display: none; }
+::view-transition-new(.pill) { animation: none; height: 100%; }
+
+/* The page itself slides in the direction you are moving: right for the next section, left for the previous. */
+@keyframes page-out-left { to { opacity: 0; transform: translateX(-56px) scale(0.985); filter: blur(2px); } }
+@keyframes page-out-right { to { opacity: 0; transform: translateX(56px) scale(0.985); filter: blur(2px); } }
+@keyframes page-in-from-right { from { opacity: 0; transform: translateX(72px) scale(0.985); filter: blur(3px); } }
+@keyframes page-in-from-left { from { opacity: 0; transform: translateX(-72px) scale(0.985); filter: blur(3px); } }
+@keyframes page-fade-out { to { opacity: 0; } }
+@keyframes page-fade-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* The old page and the new page share the name "page": the old one leaves, the new one arrives. */
+::view-transition-group(.page-forward), ::view-transition-group(.page-back), ::view-transition-group(.page-fade) { animation-duration: 600ms; }
+::view-transition-old(.page-forward) { animation: 240ms cubic-bezier(0.4, 0, 1, 1) both page-out-left; }
+::view-transition-new(.page-forward) { animation: 520ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both page-in-from-right; }
+::view-transition-old(.page-back) { animation: 240ms cubic-bezier(0.4, 0, 1, 1) both page-out-right; }
+::view-transition-new(.page-back) { animation: 520ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both page-in-from-left; }
+::view-transition-old(.page-fade) { animation: 180ms ease-out both page-fade-out; }
+::view-transition-new(.page-fade) { animation: 380ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both page-fade-in; }
+::view-transition-image-pair(.page-forward), ::view-transition-image-pair(.page-back) { isolation: auto; }
+
+/* Windows drop onto the canvas like stamps, one after another. New notes get the same treatment. */
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-14px) rotate(-1deg) scale(0.97); }
+  60% { opacity: 1; transform: translateY(2px) rotate(0.2deg) scale(1.004); }
+  to { opacity: 1; transform: none; }
+}
+.note, .node { animation: drop-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(min(var(--i, 0), 14) * 36ms + 140ms); }
+.study > *, .cal > *, .login-card { animation: drop-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.study > :nth-child(2), .cal > :nth-child(2) { animation-delay: 90ms; }
+.study > :nth-child(3) { animation-delay: 170ms; }
+.study > :nth-child(4) { animation-delay: 240ms; }
+.study-msg { animation: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .note, .node, .study > *, .cal > *, .login-card { animation: none !important; }
+}

@@ -19,6 +19,7 @@ npm run dev
 - **Plantillas:** Lean Canvas, validar una idea, pitch, semana de trabajo, repaso de examen, agenda de reunión.
 - **Pregúntale a tus notas:** respuestas con las notas fuente.
 - **Exportar** a Markdown o JSON, y **compartir** un lienzo por enlace de solo lectura.
+- Transiciones entre secciones (View Transitions): la barra se queda quieta, la pestaña activa se desliza y la página entra por el lado hacia donde navegas; las ventanas "caen" sobre el lienzo. Se desactivan con "reducir movimiento".
 - Instalable como app (PWA) y cuentas con **correo y contraseña** (Supabase); recuperación de contraseña y enlace al correo como alternativa.
 
 ## Modos

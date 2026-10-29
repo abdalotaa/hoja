@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ViewTransition, useCallback, useEffect, useMemo, useState } from "react";
 import AppBar from "./AppBar";
 import { ai, formatGuide } from "@/lib/ai";
 import { CARDS, NOTES, type Card } from "@/lib/model";
@@ -141,6 +141,11 @@ export default function Study({ userEmail }: { userEmail?: string }) {
   return (
     <div className="app study-app">
       <AppBar current="estudio" userEmail={userEmail} />
+      <ViewTransition
+      name="page"
+      share={{ "nav-forward": "page-forward", "nav-back": "page-back", default: "page-fade" }}
+      default="none"
+    >
       <main className="study">
         <section className="review ds-win" aria-label="Repaso de hoy">
           <div className="note-bar" style={{ cursor: "default" }}>
@@ -287,6 +292,7 @@ export default function Study({ userEmail }: { userEmail?: string }) {
           </section>
         )}
       </main>
+      </ViewTransition>
     </div>
   );
 }

@@ -19,10 +19,11 @@ interface Props {
   onConnect: (id: string, e: React.PointerEvent) => void;
   zoom?: number;
   dragging?: boolean;
+  index?: number;
   onDragStart: (id: string, e: React.PointerEvent) => void;
 }
 
-export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1, dragging = false, onDragStart }: Props) {
+export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1, dragging = false, index = 0, onDragStart }: Props) {
   const [menu, setMenu] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const nodeRef = useRef<HTMLTextAreaElement>(null);
@@ -82,7 +83,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
         data-tone={note.tone}
         data-active={active}
         data-dragging={dragging}
-        style={{ left: note.x, top: note.y, width: note.w, minHeight: note.h, zIndex: note.z }}
+        style={{ left: note.x, top: note.y, width: note.w, minHeight: note.h, zIndex: note.z, "--i": index } as React.CSSProperties}
         onPointerDown={drag}
       >
         <span className="node-grip" aria-hidden="true" />
@@ -109,7 +110,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
       data-note-id={note.id}
       data-active={active}
       data-dragging={dragging}
-      style={{ left: note.x, top: note.y, width: note.w, height: note.h, zIndex: note.z }}
+      style={{ left: note.x, top: note.y, width: note.w, height: note.h, zIndex: note.z, "--i": index } as React.CSSProperties}
       onPointerDown={() => onFocus(note.id)}
     >
       <header className="note-bar" onPointerDown={drag}>

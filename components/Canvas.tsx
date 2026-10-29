@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ViewTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AppBar from "./AppBar";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
@@ -629,6 +629,11 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         </button>
       </AppBar>
 
+      <ViewTransition
+      name="page"
+      share={{ "nav-forward": "page-forward", "nav-back": "page-back", default: "page-fade" }}
+      default="none"
+    >
       <main
         ref={canvasRef}
         className="canvas pannable"
@@ -669,6 +674,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               onAction={onAction}
               onConnect={startConnect}
               zoom={zoom}
+              index={visible.indexOf(n)}
               dragging={draggingId === n.id}
               onDragStart={startDrag}
             />
@@ -727,6 +733,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           </div>
         )}
       </main>
+      </ViewTransition>
     </div>
   );
 }

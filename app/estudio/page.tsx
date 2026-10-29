@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import PageShell from "@/components/PageShell";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import Study from "@/components/Study";
@@ -17,7 +18,7 @@ async function SignedIn() {
 export default function StudyPage() {
   if (!authEnabled) return <Study />;
   return (
-    <Suspense fallback={<div className="app canvas" aria-busy="true" />}>
+    <Suspense fallback={<PageShell current="estudio" />}>
       <SignedIn />
     </Suspense>
   );

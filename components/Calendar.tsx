@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { ViewTransition, useEffect, useMemo, useState } from "react";
 import AppBar from "./AppBar";
 import { downloadIcs } from "@/lib/calendar";
 import { dayLabel, fromYmd, monthGrid, monthLabel, ymd } from "@/lib/dates";
@@ -134,6 +134,11 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
           Exportar .ics
         </button>
       </AppBar>
+      <ViewTransition
+      name="page"
+      share={{ "nav-forward": "page-forward", "nav-back": "page-back", default: "page-fade" }}
+      default="none"
+    >
       <main className="cal">
         {!ready || !cursor ? (
           <p className="mono">cargando…</p>
@@ -253,6 +258,7 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
           </>
         )}
       </main>
+      </ViewTransition>
     </div>
   );
 }
