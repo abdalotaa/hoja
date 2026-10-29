@@ -24,7 +24,7 @@ interface Entry {
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-export default function Calendar({ userEmail, userId }: { userEmail?: string; userId?: string }) {
+export default function Calendar({ userEmail, userName, userId }: { userEmail?: string; userName?: string; userId?: string }) {
   const cloud = Boolean(userEmail);
   const eventsStore = useSynced(EVENTS, cloud, userId);
   const notesStore = useSynced(NOTES, cloud, userId);
@@ -129,7 +129,7 @@ export default function Calendar({ userEmail, userId }: { userEmail?: string; us
 
   return (
     <div className="app study-app">
-      <AppBar current="calendario" userEmail={userEmail}>
+      <AppBar current="calendario" userEmail={userEmail} userName={userName}>
         <SyncStatus stores={[notesStore, cardsStore, eventsStore]} cloud={cloud} />
         <button className="btn line" onClick={exportAll} disabled={!entries.some((e) => !e.done)} title="Descarga un .ics con todo lo pendiente">
           Exportar .ics

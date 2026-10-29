@@ -2,9 +2,12 @@
 
 import { ViewTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import AppBar from "./AppBar";
 import SyncStatus from "./SyncStatus";
 import Tour from "./Tour";
+import InstallTip from "./InstallTip";
+import Notebooks from "./Notebooks";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
 import Menu from "./Menu";
@@ -17,26 +20,35 @@ import { TEMPLATES, buildTemplate, templateSize } from "@/lib/templates";
 import { buildMindMap } from "@/lib/mindmap";
 import { arrange } from "@/lib/arrange";
 import { freeSpot, worldOf } from "@/lib/placement";
-import { CARDS, EVENTS, LINKS, NOTES, type Card } from "@/lib/model";
+import { CARDS, EVENTS, LINKS, NOTEBOOKS, NOTES, type Card, type Notebook } from "@/lib/model";
 import { newNote, type Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
 import { useSpeech } from "@/lib/useSpeech";
 import { deleteSession, listSessions, transcribeStored, useRecorder, type SessionMeta } from "@/lib/useRecorder";
 import { useSynced } from "@/lib/useSynced";
+import { inView, useNotebookView } from "@/lib/useNotebookView";
 import { backlinksOf, derivedLinks } from "@/lib/wiki";
 
 const DocPanel = dynamic(() => import("./DocPanel"), { ssr: false });
 
-export default function Canvas({ userEmail, userId }: { userEmail?: string; userId?: string }) {
+export default function Canvas({ userEmail, userName, userId }: { userEmail?: string; userName?: string; userId?: string }) {
+  const router = useRouter();
   const cloud = Boolean(userEmail);
   const notesStore = useSynced(NOTES, cloud, userId);
   const linksStore = useSynced(LINKS, cloud, userId);
   const cardsStore = useSynced(CARDS, cloud, userId);
   const eventsStore = useSynced(EVENTS, cloud, userId);
+  const notebooksStore = useSynced(NOTEBOOKS, cloud, userId);
   const importRef = useRef<HTMLInputElement>(null);
-  const { items: notes, setItems: setNotes } = notesStore;
+  const { items: allNotes, setItems: setNotes } = notesStore;
+  const { items: notebooks, setItems: setNotebooks } = notebooksStore;
+  const [storedView, setView] = useNotebookView();
+  // A notebook that no longer exists falls back to showing everything (once notebooks have loaded).
+  const view = storedView === "all" || storedView === "none" || !notebooksStore.ready || notebooks.some((b) => b.id === storedView) ? storedView : "all";
+  const activeNb = view !== "all" && view !== "none" ? view : null;
+  const notes = useMemo(() => (view === "all" ? allNotes : allNotes.filter((n) => inView(n, view))), [allNotes, view]);
   const { items: links, setItems: setLinks } = linksStore;
-  const ready = notesStore.ready && linksStore.ready && cardsStore.ready && eventsStore.ready;
+  const ready = notesStore.ready && notebooksStore.ready && linksStore.ready && cardsStore.ready && eventsStore.ready;
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -62,6 +74,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
   const listening = server ? rec.recording : speech.listening;
   const canDictate = server || speech.supported;
   const [touring, setTouring] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [orphans, setOrphans] = useState<SessionMeta[]>([]);
@@ -72,7 +85,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
   }, []);
 
   useEffect(() => {
-    if (ready) topZ.current = Math.max(topZ.current, ...notes.map((n) => n.z), 1);
+    if (ready) topZ.current = Math.max(topZ.current, ...allNotes.map((n) => n.z), 1);
     // only when loading finishes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
@@ -138,15 +151,18 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
   );
   const viewportSpot = useCallback(() => spotFor({ w: 320, h: 260 }), [spotFor]);
 
+  /** New notes join the notebook being looked at. */
+  const tag = useCallback(<T extends Note>(n: T): T => (activeNb ? { ...n, notebookId: activeNb } : n), [activeNb]);
+
   const add = useCallback(() => {
-    const note = newNote(notes.length, ++topZ.current, viewportSpot());
+    const note = tag(newNote(notes.length, ++topZ.current, viewportSpot()));
     setNotes((all) => [...all, note]);
     setActiveId(note.id);
     setOpenId(note.id);
-  }, [notes.length, setNotes, viewportSpot]);
+  }, [notes.length, setNotes, viewportSpot, tag]);
 
   const addSample = useCallback(() => {
-    const note = newNote(notes.length, ++topZ.current, viewportSpot());
+    const note = tag(newNote(notes.length, ++topZ.current, viewportSpot()));
     note.title = "Bienvenida a Hoja";
     note.tone = "butter";
     note.text = [
@@ -162,13 +178,13 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     ].join("\n");
     setNotes((all) => [...all, note]);
     setActiveId(note.id);
-  }, [notes.length, setNotes, viewportSpot]);
+  }, [notes.length, setNotes, viewportSpot, tag]);
 
   /** A note created from a [[link]] to a title that doesn't exist yet; it lands beside the note it was linked from. */
   const createLinked = useCallback(
     (title: string, near: Note) => {
       const spot = spotFor({ w: 320, h: 260 }, { x: near.x + near.w + 80, y: near.y });
-      const fresh = { ...newNote(notes.length, ++topZ.current, spot), title };
+      const fresh = { ...newNote(notes.length, ++topZ.current, spot), title, notebookId: near.notebookId ?? null };
       setNotes((all) => [...all, fresh]);
       return fresh.id;
     },
@@ -249,7 +265,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         });
         topZ.current += built.nodes.length;
         const rootLink = { id: crypto.randomUUID(), from: note.id, to: built.nodes[0].id, updatedAt: Date.now() };
-        setNotes((all) => [...all, ...built.nodes]);
+        setNotes((all) => [...all, ...built.nodes.map((n) => ({ ...n, notebookId: note.notebookId ?? null }))]);
         setLinks((all) => [...all, rootLink, ...built.links]);
         setTimeout(() => scrollToWorld(origin.x, origin.y, 120), 80);
       } catch (e) {
@@ -408,6 +424,68 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     return () => c.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
 
+  // Two-finger pinch on a touch screen: zoom around the fingers and follow them as they move. iOS would otherwise
+  // zoom the whole page, so the canvas takes the gesture (see touch-action in the stylesheet).
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    let pinch: { dist: number; zoom: number; x: number; y: number } | null = null;
+    let frame = 0;
+    const read = (t: TouchList) => {
+      const r = c.getBoundingClientRect();
+      return {
+        dist: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY),
+        x: (t[0].clientX + t[1].clientX) / 2 - r.left,
+        y: (t[0].clientY + t[1].clientY) / 2 - r.top,
+      };
+    };
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) pinch = { ...read(e.touches), zoom: zoomRef.current };
+      else pinch = null;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const now = read(e.touches);
+      const start = pinch;
+      if (!start.dist || !now.dist) return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const before = afterZoom.current;
+        zoomAt((start.zoom * now.dist) / start.dist / zoomRef.current, now.x, now.y);
+        const dx = now.x - start.x;
+        const dy = now.y - start.y;
+        if (afterZoom.current !== before) {
+          const place = afterZoom.current;
+          afterZoom.current = (el) => {
+            place?.(el);
+            el.scrollLeft -= dx;
+            el.scrollTop -= dy;
+          };
+        } else {
+          c.scrollLeft -= dx;
+          c.scrollTop -= dy;
+        }
+        // Next frame measures from here, so the two fingers also pan the board.
+        pinch = { dist: now.dist, zoom: zoomRef.current, x: now.x, y: now.y };
+      });
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    c.addEventListener("touchstart", onStart, { passive: true });
+    c.addEventListener("touchmove", onMove, { passive: false });
+    c.addEventListener("touchend", onEnd);
+    c.addEventListener("touchcancel", onEnd);
+    return () => {
+      cancelAnimationFrame(frame);
+      c.removeEventListener("touchstart", onStart);
+      c.removeEventListener("touchmove", onMove);
+      c.removeEventListener("touchend", onEnd);
+      c.removeEventListener("touchcancel", onEnd);
+    };
+  }, [zoomAt]);
+
   // Dragging a note: its position follows the pointer in board coordinates, and the view
   // scrolls on its own when the pointer nears an edge, so you can carry a note anywhere.
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -528,7 +606,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
   /** Turns a finished transcript into a note and, for meetings, extracts decisions and tasks. */
   const saveTranscript = useCallback(
     (transcript: string, as: "note" | "meeting") => {
-      const note = newNote(notes.length, ++topZ.current, viewportSpot());
+      const note = tag(newNote(notes.length, ++topZ.current, viewportSpot()));
       note.title = as === "meeting" ? "Reunión" : "Nota de voz";
       note.text = transcript;
       setNotes((all) => [...all, note]);
@@ -559,7 +637,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         }
       })();
     },
-    [notes.length, runSummary, setNotes, viewportSpot, setBusyFor],
+    [notes.length, runSummary, setNotes, viewportSpot, setBusyFor, tag],
   );
 
   const toggleDictation = useCallback(
@@ -642,32 +720,34 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         n.y += origin.y;
       });
       topZ.current += fresh.length;
-      setNotes((all) => [...all, ...fresh]);
+      setNotes((all) => [...all, ...fresh.map(tag)]);
       setTimeout(() => scrollToWorld(origin.x, origin.y), 80);
     },
-    [setNotes, spotFor, scrollToWorld],
+    [setNotes, spotFor, scrollToWorld, tag],
   );
 
   const openNote = useCallback(
     (id: string) => {
-      const n = notes.find((x) => x.id === id);
+      const n = allNotes.find((x) => x.id === id);
       if (!n) return;
       setQuery("");
+      // A note from another notebook: go to that notebook first.
+      if (view !== "all" && !inView(n, view)) setView(n.notebookId ?? "none");
       focus(id);
       scrollToWorld(n.x, n.y, 80);
     },
-    [notes, focus, scrollToWorld],
+    [allNotes, view, setView, focus, scrollToWorld],
   );
 
   const share = useCallback(async () => {
     try {
-      const url = await createShare(notes, links, "Mi lienzo");
+      const url = await createShare(allNotes, links, "Mi lienzo");
       await navigator.clipboard.writeText(url).catch(() => undefined);
       setNotice(`Enlace de solo lectura copiado: ${url}`);
     } catch {
       setNotice("No se pudo crear el enlace. ¿Ya ejecutaste el SQL actualizado en Supabase?");
     }
-  }, [notes, links]);
+  }, [allNotes, links]);
 
   const unshare = useCallback(async () => {
     try {
@@ -678,11 +758,42 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     }
   }, []);
 
-  const openNote_ = notes.find((n) => n.id.toLowerCase() === openId?.toLowerCase());
+  const openNote_ = allNotes.find((n) => n.id.toLowerCase() === openId?.toLowerCase());
 
 
-  const textLinks = useMemo(() => derivedLinks(notes), [notes]);
-  const backCounts = useMemo(() => new Map(notes.map((n) => [n.id, backlinksOf(notes, n.id).length])), [notes]);
+  const textLinks = useMemo(() => derivedLinks(allNotes), [allNotes]);
+  const backCounts = useMemo(() => new Map(allNotes.map((n) => [n.id, backlinksOf(allNotes, n.id).length])), [allNotes]);
+
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of allNotes) if (n.notebookId) m.set(n.notebookId, (m.get(n.notebookId) ?? 0) + 1);
+    return m;
+  }, [allNotes]);
+  const loose = useMemo(() => allNotes.filter((n) => !n.notebookId).length, [allNotes]);
+  const createNotebook = useCallback(
+    (name: string) => {
+      const tones = ["butter", "mint", "rust", "none"] as const;
+      const nb = { id: crypto.randomUUID(), name, tone: tones[notebooks.length % tones.length], updatedAt: Date.now() };
+      setNotebooks((all) => [...all, nb]);
+      setView(nb.id);
+    },
+    [notebooks.length, setNotebooks, setView],
+  );
+  const editNotebook = useCallback(
+    (id: string, patch: Partial<{ name: string; tone: Notebook["tone"] }>) =>
+      setNotebooks((all) => all.map((b) => (b.id === id ? { ...b, ...patch, updatedAt: Date.now() } : b))),
+    [setNotebooks],
+  );
+  const deleteNotebook = useCallback(
+    (id: string) => {
+      const name = notebooks.find((b) => b.id === id)?.name || "esta libreta";
+      if (!window.confirm(`¿Eliminar «${name}»? Sus notas no se borran: pasan a «Sin libreta».`)) return;
+      setNotes((all) => all.map((n) => (n.notebookId === id ? { ...n, notebookId: null, updatedAt: Date.now() } : n)));
+      setNotebooks((all) => all.filter((b) => b.id !== id));
+      setView("all");
+    },
+    [notebooks, setNotes, setNotebooks, setView],
+  );
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(
@@ -702,6 +813,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         try {
           if (file.size > 20_000_000) throw new Error("El respaldo supera el límite de 20 MB.");
           const backup = copyBackup(parseBackup(await file.text()));
+          setNotebooks((all) => [...all, ...backup.notebooks]);
           setNotes((all) => [...all, ...backup.notes]);
           setLinks((all) => [...all, ...backup.links]);
           cardsStore.setItems((all) => [...all, ...backup.cards]);
@@ -711,8 +823,8 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
           setNotice(error instanceof Error ? error.message : "No se pudo importar el respaldo.");
         }
       }} />
-      <AppBar current="lienzo" userEmail={userEmail}>
-        <SyncStatus stores={[notesStore, linksStore, cardsStore, eventsStore]} cloud={cloud} />
+      <AppBar current="lienzo" userEmail={userEmail} userName={userName}>
+        <SyncStatus stores={[notesStore, notebooksStore, linksStore, cardsStore, eventsStore]} cloud={cloud} />
         <input
           className="search"
           type="search"
@@ -732,13 +844,15 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         <Menu
           label="Más ▾"
           items={[
-            { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(notes, links), disabled: notes.length === 0 },
-            { label: "Respaldo completo (JSON)", hint: "Notas, conexiones, tarjetas y eventos", onSelect: () => exportJson(notes, links, cardsStore.items, eventsStore.items), disabled: !ready },
+            { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(allNotes, links), disabled: allNotes.length === 0 },
+            { label: "Respaldo completo (JSON)", hint: "Notas, conexiones, tarjetas y eventos", onSelect: () => exportJson(allNotes, links, cardsStore.items, eventsStore.items, notebooks), disabled: !ready },
             { label: "Importar respaldo (JSON)", hint: "Agrega una copia sin reemplazar tus datos", onSelect: () => importRef.current?.click(), disabled: !ready },
+            ...(cloud ? [{ label: "Mi cuenta", hint: userName || userEmail, onSelect: () => router.push("/cuenta") }] : []),
+            { label: "Agregar a la pantalla de inicio", hint: "Ábrela como una app", onSelect: () => setInstalling(true) },
             { label: "Ver el recorrido", hint: "Una vuelta rápida por Hoja", onSelect: () => setTouring(true) },
             ...(cloud
               ? [
-                  { label: "Compartir lienzo (solo lectura)", hint: "Crea un enlace y lo copia", onSelect: share, disabled: notes.length === 0 },
+                  { label: "Compartir lienzo (solo lectura)", hint: "Crea un enlace y lo copia", onSelect: share, disabled: allNotes.length === 0 },
                   { label: "Dejar de compartir", hint: "Desactiva todos tus enlaces", onSelect: unshare },
                 ]
               : []),
@@ -771,7 +885,20 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         </button>
         </div>
       </AppBar>
-      <Tour ready={ready} empty={notes.length === 0} forceOpen={touring} onClose={() => setTouring(false)} onSample={addSample} />
+      <Notebooks
+          notebooks={notebooks}
+          counts={counts}
+          total={allNotes.length}
+          loose={loose}
+          view={view}
+          onView={setView}
+          onCreate={createNotebook}
+          onRename={(id, name) => editNotebook(id, { name })}
+          onTone={(id, tone) => editNotebook(id, { tone })}
+          onDelete={deleteNotebook}
+        />
+      <InstallTip ready={ready && !touring} forceOpen={installing} onClose={() => setInstalling(false)} />
+      <Tour name={userName} ready={ready} empty={allNotes.length === 0} forceOpen={touring} onClose={() => setTouring(false)} onSample={addSample} />
 
       <ViewTransition
       name="page"
@@ -918,11 +1045,13 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         {openNote_ && (
           <DocPanel
             note={openNote_}
-            notes={notes}
+            notes={allNotes}
+            notebooks={notebooks}
             onChange={change}
             onOpen={(id) => {
-              const target = notes.find((n) => n.id.toLowerCase() === id.toLowerCase());
+              const target = allNotes.find((n) => n.id.toLowerCase() === id.toLowerCase());
               if (target) {
+                if (view !== "all" && !inView(target, view)) setView(target.notebookId ?? "none");
                 focus(target.id);
                 setOpenId(target.id);
                 scrollToWorld(target.x, target.y, 120);
@@ -932,7 +1061,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
             onClose={() => setOpenId(null)}
           />
         )}
-        {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
+        {asking && <AskDialog notes={allNotes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
         {ready && notes.length === 0 && !listening && (
           <div className="empty">
             <h1>Hoja</h1>

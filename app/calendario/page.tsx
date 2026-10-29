@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import Calendar from "@/components/Calendar";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
+import { displayName } from "@/lib/profile";
 
 export const metadata = { title: "Calendario — Hoja" };
 
@@ -12,7 +13,7 @@ async function SignedIn() {
   await connection();
   const user = await getUser();
   if (!user) redirect("/login");
-  return <Calendar userEmail={user.email ?? "cuenta"} userId={user.id} />;
+  return <Calendar userEmail={user.email ?? "cuenta"} userName={displayName(user.user_metadata)} userId={user.id} />;
 }
 
 export default function CalendarPage() {

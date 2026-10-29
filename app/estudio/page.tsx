@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import Study from "@/components/Study";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
+import { displayName } from "@/lib/profile";
 
 export const metadata = { title: "Estudio — Hoja" };
 
@@ -12,7 +13,7 @@ async function SignedIn() {
   await connection();
   const user = await getUser();
   if (!user) redirect("/login");
-  return <Study userEmail={user.email ?? "cuenta"} userId={user.id} />;
+  return <Study userEmail={user.email ?? "cuenta"} userName={displayName(user.user_metadata)} userId={user.id} />;
 }
 
 export default function StudyPage() {

@@ -35,3 +35,23 @@ describe("backups", () => {
     expect(() => parseBackup(JSON.stringify(b))).toThrow();
   });
 });
+
+describe("notebooks in backups", () => {
+  const nb = { id: "11111111-1111-4111-8111-111111111111", name: "Biología", tone: "mint", updatedAt: 1 };
+  const note = (notebookId: string | null) => ({ id: crypto.randomUUID(), title: "t", text: "x", tone: "none", x: 0, y: 0, w: 320, h: 260, z: 1, updatedAt: 1, notebookId });
+  it("keeps the notebook of each note when importing, under new ids", () => {
+    const source = { app: "hoja", version: 3, notebooks: [nb], notes: [note(nb.id), note(null)], links: [], cards: [], events: [] };
+    const copied = copyBackup(parseBackup(JSON.stringify(source)));
+    expect(copied.notebooks).toHaveLength(1);
+    expect(copied.notebooks[0].id).not.toBe(nb.id);
+    expect(copied.notes[0].notebookId).toBe(copied.notebooks[0].id);
+    expect(copied.notes[1].notebookId).toBeNull();
+  });
+  it("rejects a note that points to a notebook the backup doesn't have", () => {
+    const source = { app: "hoja", version: 3, notebooks: [], notes: [note("22222222-2222-4222-8222-222222222222")], links: [], cards: [], events: [] };
+    expect(() => parseBackup(JSON.stringify(source))).toThrow();
+  });
+  it("still reads older backups without notebooks", () => {
+    expect(parseBackup(JSON.stringify({ app: "hoja", version: 2, notes: [note(null)], links: [], cards: [], events: [] })).notebooks).toEqual([]);
+  });
+});

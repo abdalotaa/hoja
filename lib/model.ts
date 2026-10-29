@@ -1,9 +1,17 @@
-import type { Note } from "./notes";
+import type { Note, Tone } from "./notes";
 
 export interface Link {
   id: string;
   from: string;
   to: string;
+  updatedAt: number;
+}
+
+/** A notebook groups notes; each one is its own canvas. */
+export interface Notebook {
+  id: string;
+  name: string;
+  tone: Tone;
   updatedAt: number;
 }
 
@@ -49,6 +57,7 @@ export const NOTES: Table<Note> = {
     text: n.text,
     tone: n.tone,
     kind: n.kind ?? "note",
+    notebook_id: n.notebookId ?? null,
     x: Math.round(n.x),
     y: Math.round(n.y),
     w: Math.round(n.w),
@@ -62,6 +71,7 @@ export const NOTES: Table<Note> = {
     text: r.text as string,
     tone: r.tone as Note["tone"],
     kind: (r.kind as Note["kind"]) ?? "note",
+    notebookId: (r.notebook_id as string | null | undefined) ?? null,
     x: r.x as number,
     y: r.y as number,
     w: r.w as number,
@@ -69,6 +79,14 @@ export const NOTES: Table<Note> = {
     z: r.z as number,
     updatedAt: r.updated_at as number,
   }),
+};
+
+export const NOTEBOOKS: Table<Notebook> = {
+  key: "hoja:notebooks:v1",
+  table: "notebooks",
+  order: "created_at",
+  toRow: (b) => ({ id: b.id, name: b.name, tone: b.tone, updated_at: b.updatedAt }),
+  fromRow: (r) => ({ id: r.id as string, name: r.name as string, tone: r.tone as Tone, updatedAt: r.updated_at as number }),
 };
 
 export const LINKS: Table<Link> = {

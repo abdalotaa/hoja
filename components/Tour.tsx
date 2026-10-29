@@ -20,6 +20,10 @@ function seen(): boolean {
     return true; // storage blocked: don't nag on every visit
   }
 }
+/** Whether the first-run tour has been seen (or skipped) in this browser. */
+export function useTourSeen(): boolean {
+  return useSyncExternalStore(subscribe, seen, () => false);
+}
 function markSeen() {
   try {
     localStorage.setItem(KEY, "1");
@@ -46,6 +50,11 @@ const STEPS: Step[] = [
     target: "new",
   },
   {
+    title: "Ordena con libretas",
+    body: "Cada libreta es su propio lienzo. Crea una por materia, cliente o proyecto, y mueve una nota entre libretas desde el editor.",
+    target: "notebooks",
+  },
+  {
     title: "Habla en vez de escribir",
     body: "Dictar pasa tu voz a texto. Reunión además saca el resumen, las decisiones y los pendientes con su fecha.",
     target: "voice",
@@ -64,12 +73,14 @@ const STEPS: Step[] = [
 
 /** First-run walkthrough. Opens by itself for someone with no notes yet, and again from the menu. */
 export default function Tour({
+  name,
   ready,
   empty,
   forceOpen,
   onClose,
   onSample,
 }: {
+  name?: string;
   ready: boolean;
   empty: boolean;
   forceOpen: boolean;
@@ -123,7 +134,7 @@ export default function Tour({
         </button>
       </div>
       <div className="tour-body">
-        <h2>{s.title}</h2>
+        <h2>{step === 0 && name ? `Hola, ${name.split(" ")[0]}` : s.title}</h2>
         <p>{s.body}</p>
         <div className="tour-dots" aria-hidden="true">
           {STEPS.map((_, i) => (

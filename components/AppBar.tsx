@@ -10,11 +10,12 @@ const TABS = [
 interface Props {
   current: (typeof TABS)[number]["id"];
   userEmail?: string;
+  userName?: string;
   children?: React.ReactNode;
 }
 
 /** The top bar shared by every section. It stays put during navigation while the active tab glides. */
-export default function AppBar({ current, userEmail, children }: Props) {
+export default function AppBar({ current, userEmail, userName, children }: Props) {
   const at = TABS.findIndex((t) => t.id === current);
   return (
     <ViewTransition name="appbar" default="none" share="appbar">
@@ -46,10 +47,10 @@ export default function AppBar({ current, userEmail, children }: Props) {
         {userEmail && (
           <form action="/auth/signout" method="post" className="who-form">
             <span className="who" title={userEmail}>
-              {userEmail}
+              {userName || userEmail}
             </span>
-            <Link href="/cambiar-contrasena" className="who-link">
-              Contraseña
+            <Link href="/cuenta" className="who-link">
+              Mi cuenta
             </Link>
             <button className="btn line" type="submit">
               Salir

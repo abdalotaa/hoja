@@ -40,7 +40,7 @@ describe("Tour", () => {
     render(<Tour {...base} />);
     fireEvent.click(screen.getByText("Siguiente"));
     expect(target.classList.contains("tour-hl")).toBe(true);
-    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByText("Siguiente"));
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByText("Siguiente"));
     expect(target.classList.contains("tour-hl")).toBe(false);
     act(() => fireEvent.click(screen.getByText("Probar con una nota de ejemplo")));
     expect(base.onSample).toHaveBeenCalledOnce();

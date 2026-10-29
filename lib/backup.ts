@@ -1,7 +1,7 @@
 import type { Note } from "./notes";
-import type { Card, CalendarEvent, Link } from "./model";
+import type { Card, CalendarEvent, Link, Notebook } from "./model";
 
-export interface Backup { app: "hoja"; version: 1 | 2; notes: Note[]; links: Link[]; cards: Card[]; events: CalendarEvent[] }
+export interface Backup { app: "hoja"; version: 1 | 2 | 3; notes: Note[]; notebooks: Notebook[]; links: Link[]; cards: Card[]; events: CalendarEvent[] }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const str = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -11,8 +11,9 @@ const id = (v: unknown): v is string => typeof v === "string" && uuid.test(v);
 export function parseBackup(raw: string): Backup {
   const b = JSON.parse(raw);
   const invalid = () => { throw new Error("El archivo no es un respaldo válido de Hoja."); };
-  if (!b || b.app !== "hoja" || ![1, 2].includes(b.version)) return invalid();
-  for (const key of ["notes", "links", "cards", "events"]) {
+  if (!b || b.app !== "hoja" || ![1, 2, 3].includes(b.version)) return invalid();
+  if (b.notebooks === undefined) b.notebooks = [];
+  for (const key of ["notes", "notebooks", "links", "cards", "events"]) {
     if (b.version === 1 && ["cards", "events"].includes(key) && b[key] === undefined) b[key] = [];
     if (!Array.isArray(b[key]) || b[key].length > 20000) return invalid();
     const seen = new Set();
@@ -21,7 +22,12 @@ export function parseBackup(raw: string): Backup {
       seen.add(row.id);
     }
   }
+  for (const nb of b.notebooks) {
+    if (!str(nb.name, 80) || !["none", "butter", "mint", "rust"].includes(nb.tone)) return invalid();
+  }
+  const books = new Set(b.notebooks.map((nb: Notebook) => nb.id));
   for (const n of b.notes) {
+    if (!(n.notebookId === undefined || n.notebookId === null || (id(n.notebookId) && books.has(n.notebookId)))) return invalid();
     if (!str(n.title, 300) || !str(n.text, 60000) || !["none", "butter", "mint", "rust"].includes(n.tone) ||
       ![undefined, "note", "node", "table"].includes(n.kind) || ![n.x, n.y, n.w, n.h, n.z].every(num) || n.w <= 0 || n.h <= 0) return invalid();
   }
@@ -41,10 +47,12 @@ export function parseBackup(raw: string): Backup {
 /** Remap every ID so importing never overwrites current work. */
 export function copyBackup(b: Backup): Backup {
   const ids = new Map(b.notes.map((n) => [n.id, crypto.randomUUID()]));
+  const books = new Map(b.notebooks.map((nb) => [nb.id, crypto.randomUUID()]));
   const now = Date.now();
   return {
     ...b,
-    notes: b.notes.map((n) => ({ ...n, id: ids.get(n.id)!, updatedAt: now,
+    notebooks: b.notebooks.map((nb) => ({ ...nb, id: books.get(nb.id)!, updatedAt: now })),
+    notes: b.notes.map((n) => ({ ...n, id: ids.get(n.id)!, notebookId: n.notebookId ? books.get(n.notebookId) ?? null : null, updatedAt: now,
       text: n.text.replace(/hoja:([0-9a-f-]{36})/gi, (match, id: string) => ids.has(id) ? `hoja:${ids.get(id)}` : match) })),
     links: b.links.map((l) => ({ ...l, id: crypto.randomUUID(), from: ids.get(l.from)!, to: ids.get(l.to)!, updatedAt: now })),
     cards: b.cards.map((c) => ({ ...c, id: crypto.randomUUID(), noteId: c.noteId ? ids.get(c.noteId) ?? null : null, updatedAt: now })),

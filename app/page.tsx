@@ -5,13 +5,14 @@ import { connection } from "next/server";
 import Canvas from "@/components/Canvas";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
+import { displayName } from "@/lib/profile";
 
 async function SignedIn() {
   // Reading the session involves time-based token checks, so this must render per request.
   await connection();
   const user = await getUser();
   if (!user) redirect("/login");
-  return <Canvas userEmail={user.email ?? "cuenta"} userId={user.id} />;
+  return <Canvas userEmail={user.email ?? "cuenta"} userName={displayName(user.user_metadata)} userId={user.id} />;
 }
 
 export default function Home() {

@@ -10,7 +10,7 @@ import { newNote } from "@/lib/notes";
 import { RATINGS, intervalLabel, schedule, type Rating } from "@/lib/srs";
 import { useSynced } from "@/lib/useSynced";
 
-export default function Study({ userEmail, userId }: { userEmail?: string; userId?: string }) {
+export default function Study({ userEmail, userName, userId }: { userEmail?: string; userName?: string; userId?: string }) {
   const cloud = Boolean(userEmail);
   const cardsStore = useSynced(CARDS, cloud, userId);
   const notesStore = useSynced(NOTES, cloud, userId);
@@ -147,7 +147,7 @@ export default function Study({ userEmail, userId }: { userEmail?: string; userI
 
   return (
     <div className="app study-app">
-      <AppBar current="estudio" userEmail={userEmail}>
+      <AppBar current="estudio" userEmail={userEmail} userName={userName}>
         <SyncStatus stores={[notesStore, cardsStore]} cloud={cloud} />
       </AppBar>
       <ViewTransition

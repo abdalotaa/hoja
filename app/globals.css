@@ -25,7 +25,7 @@ body {
   overflow: hidden;
 }
 
-button { font: inherit; color: inherit; cursor: pointer; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
 
 :where(a, button, input, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--accent);
@@ -425,7 +425,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 820px) { .who-link { display: none; } }
 
 /* ───────── pan the canvas by dragging the background ───────── */
-.pannable { cursor: grab; scrollbar-width: thin; scrollbar-color: var(--ink) var(--hover-bg); }
+/* Touch: one finger scrolls the board, two fingers are handled in JS as a pinch (browser zoom is off here). */
+.pannable { touch-action: pan-x pan-y; cursor: grab; scrollbar-width: thin; scrollbar-color: var(--ink) var(--hover-bg); }
 .pannable[data-panning="true"] { cursor: grabbing; user-select: none; }
 .pannable[data-panning="true"] * { pointer-events: none; }
 .pannable .note, .pannable .node, .pannable .live, .pannable .ask { cursor: auto; }
@@ -589,6 +590,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 820px) { .doc-panel { top: 88px; right: 8px; left: 8px; width: auto; } }
 @media (prefers-reduced-motion: reduce) { .doc-panel { animation: none; transition: none; } }
 
+/* ───────── notebooks ───────── */
+.notebooks { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px clamp(14px, 3vw, 32px); background: var(--bg); border-bottom: 2px solid var(--line-soft); }
+.nb-scroll { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.nb-scroll::-webkit-scrollbar { display: none; }
+.nb { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 6px 14px; border-radius: 999px; border: 2px solid var(--ink); background: transparent; color: var(--ink); font-size: 13px; font-weight: 700; white-space: nowrap; }
+.nb:hover { background: var(--hover-bg); }
+.nb small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.nb[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.nb[aria-pressed="true"] small { color: var(--bg); opacity: 0.7; }
+.nb-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor; }
+.nb[data-tone="butter"] .nb-dot { background: var(--butter); }
+.nb[data-tone="mint"] .nb-dot { background: var(--mint); }
+.nb[data-tone="rust"] .nb-dot { background: var(--accent); }
+.nb-add { border-style: dashed; color: var(--muted); }
+.nb-more { padding: 6px 12px; }
+.nb-input { flex: none; width: 190px; padding: 6px 12px; border: 2px solid var(--accent); border-radius: 999px; background: var(--paper); font: inherit; font-size: 14px; }
+.nb-select { max-width: 150px; font: inherit; font-size: 12px; font-weight: 700; }
+@media (max-width: 700px) { .notebooks { padding: 6px 10px; } .nb { padding: 8px 14px; } .nb-input { font-size: 16px; } }
+
 /* ───────── first-run tour ───────── */
 .tour {
   position: fixed; right: 24px; bottom: 24px; z-index: 90; width: min(380px, calc(100vw - 32px));
@@ -628,7 +648,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .bar-dock > .btn:not(.line) { order: -1; }
   .bar-dock .btn { flex: none; min-height: 44px; padding: 10px 16px; font-size: 14px; }
   .bar-dock .menu { flex: none; position: static; }
-  .menu-pop { position: fixed; left: 10px; right: 10px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); min-width: 0; max-height: 60vh; overflow: auto; }
+  .menu-pop { position: fixed; z-index: 100; left: 10px; right: 10px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); min-width: 0; max-height: 60vh; overflow: auto; }
   .menu-pop button { padding: 14px 12px; }
   .app:has(.bar-dock) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 
@@ -639,7 +659,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .ask { left: 10px; right: 10px; width: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
   .tour { top: 132px; bottom: auto; left: 10px; right: 10px; width: auto; }
   .doc-panel, .doc-panel[data-expanded="true"] { top: 8px; bottom: 8px; left: 8px; right: 8px; width: auto; }
-  .doc-panel .note-bar .tag { display: none; }
+  .doc-panel .note-bar button.tag { display: none; }
   .doc-main { padding: 14px 16px 32px; }
   .doc-prose { font-size: 16px; }
 
@@ -657,3 +677,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .cal-main .note-label { margin-left: 4px; letter-spacing: 0.06em; font-size: 10px; }
   .cal-main .note-bar .tag { padding: 4px 8px; }
 }
+
+/* ───────── add to home screen ───────── */
+.install {
+  position: fixed; left: 10px; right: 10px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 70;
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; box-shadow: 8px 8px 0 var(--accent); overflow: hidden;
+  animation: panel-in 380ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.install-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 15px; line-height: 1.45; color: var(--body-ink); }
+.install-icon { width: 18px; height: 18px; vertical-align: -3px; }
+@media (min-width: 701px) { .install { left: auto; right: 24px; bottom: 24px; width: 380px; } }
+@media (prefers-reduced-motion: reduce) { .install { animation: none; } }

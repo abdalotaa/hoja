@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DocEditor from "./DocEditor";
 import type { Note } from "@/lib/notes";
+import type { Notebook } from "@/lib/model";
 import { backlinksOf, outgoingIds, outline } from "@/lib/wiki";
 
 interface Props {
@@ -12,10 +13,11 @@ interface Props {
   onOpen: (id: string) => void;
   onCreate: (title: string, near: Note) => string;
   onClose: () => void;
+  notebooks?: Notebook[];
 }
 
 /** Side panel for writing a note as a full document, with its outline and links. */
-export default function DocPanel({ note, notes, onChange, onOpen, onCreate, onClose }: Props) {
+export default function DocPanel({ note, notes, onChange, onOpen, onCreate, onClose, notebooks = [] }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -41,6 +43,21 @@ export default function DocPanel({ note, notes, onChange, onOpen, onCreate, onCl
         <i className="dot" aria-hidden="true" />
         <button className="dot" aria-label={expanded ? "Reducir" : "Ampliar a pantalla completa"} onClick={() => setExpanded((e) => !e)} />
         <span className="note-label mono">documento</span>
+        {notebooks.length > 0 && (
+          <select
+            className="tag nb-select"
+            aria-label="Libreta de esta nota"
+            value={note.notebookId ?? ""}
+            onChange={(e) => onChange(note.id, { notebookId: e.target.value || null })}
+          >
+            <option value="">Sin libreta</option>
+            {notebooks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name || "Sin nombre"}
+              </option>
+            ))}
+          </select>
+        )}
         <button className="tag" onClick={() => setExpanded((e) => !e)}>
           {expanded ? "Reducir ⤡" : "Ampliar ⤢"}
         </button>

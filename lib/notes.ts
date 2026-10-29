@@ -7,6 +7,8 @@ export interface Note {
   tone: Tone;
   /** "node" is a compact mind-map bubble, "table" a spreadsheet-style note; omitted means a regular note. */
   kind?: "note" | "node" | "table";
+  /** The notebook this note belongs to; none means it sits outside any notebook. */
+  notebookId?: string | null;
   x: number;
   y: number;
   w: number;
