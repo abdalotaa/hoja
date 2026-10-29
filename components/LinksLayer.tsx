@@ -6,6 +6,8 @@ import type { Note } from "@/lib/notes";
 interface Props {
   notes: Note[];
   links: Link[];
+  /** Arrows implied by [[links]] in the text: drawn differently, not removable here. */
+  auto?: Link[];
   /** A link being dragged from a note to the pointer. */
   draft: { fromId: string; x: number; y: number } | null;
   onRemove?: (id: string) => void;
@@ -45,9 +47,21 @@ function curve(p: Anchor, q: Anchor) {
   return { d: `M${p.x},${p.y} C${c1} ${c2} ${q.x},${q.y}`, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
 }
 
-export default function LinksLayer({ notes, links, draft, onRemove }: Props) {
+export default function LinksLayer({ notes, links, auto = [], draft, onRemove }: Props) {
   const byId = new Map(notes.map((n) => [n.id, n]));
   const drawn = links
+    .map((l) => {
+      const a = byId.get(l.from);
+      const b = byId.get(l.to);
+      if (!a || !b) return null;
+      const [p, q] = anchors(a, b);
+      return { id: l.id, ...curve(p, q) };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null);
+
+  const manualPairs = new Set(links.flatMap((l) => [`${l.from}>${l.to}`, `${l.to}>${l.from}`]));
+  const drawnAuto = auto
+    .filter((l) => !manualPairs.has(`${l.from}>${l.to}`))
     .map((l) => {
       const a = byId.get(l.from);
       const b = byId.get(l.to);
@@ -66,9 +80,15 @@ export default function LinksLayer({ notes, links, draft, onRemove }: Props) {
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#17140f" />
           </marker>
+          <marker id="arrow-auto" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#8c2f1e" />
+          </marker>
         </defs>
         {drawn.map((l) => (
           <path key={l.id} d={l.d} className="link-path" markerEnd="url(#arrow)" />
+        ))}
+        {drawnAuto.map((l) => (
+          <path key={l.id} d={l.d} className="link-path auto" markerEnd="url(#arrow-auto)" />
         ))}
         {draft && from && (
           <path

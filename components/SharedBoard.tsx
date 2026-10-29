@@ -3,6 +3,7 @@
 import LinksLayer from "./LinksLayer";
 import type { Link } from "@/lib/model";
 import type { Note } from "@/lib/notes";
+import { stripMarkdown } from "@/lib/wiki";
 
 /** A read-only view of a shared canvas. */
 export default function SharedBoard({ title, notes: raw, links }: { title: string; notes: Note[]; links: Link[] }) {
@@ -49,7 +50,7 @@ export default function SharedBoard({ title, notes: raw, links }: { title: strin
                     {n.title}
                   </h2>
                   <p className="note-text" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                    {n.text}
+                    {stripMarkdown(n.text)}
                   </p>
                   {n.tone !== "none" && <span className="tag" data-tone={n.tone} style={{ alignSelf: "flex-start" }}>{{ butter: "Idea", mint: "Pendiente", rust: "Importante", none: "" }[n.tone]}</span>}
                 </div>

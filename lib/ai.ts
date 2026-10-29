@@ -50,31 +50,34 @@ export async function ai<K extends keyof Tasks>(task: K, input: Tasks[K]["in"]):
   return (data as { result: Tasks[K]["out"] }).result;
 }
 
-const MARK = "— Original —\n";
+const LEGACY_MARK = "— Original —\n";
+const MARK = "## Original\n";
 
 /** If the note was already summarized, returns only its original text so a second run doesn't summarize the summary. */
 export function extractOriginal(text: string): string {
   const i = text.lastIndexOf(MARK);
-  return i === -1 ? text : text.slice(i + MARK.length).trim();
+  if (i !== -1) return text.slice(i + MARK.length).trim();
+  const j = text.lastIndexOf(LEGACY_MARK);
+  return j === -1 ? text : text.slice(j + LEGACY_MARK.length).trim();
 }
+
+const list = (items: string[]) => items.map((p) => `- ${p}`).join("\n");
+const tasks = (items: string[]) => items.map((p) => `- [ ] ${p}`).join("\n");
 
 export function formatSummary(s: Summary, original: string): string {
   const parts = [s.summary];
-  if (s.keyPoints.length) parts.push("Ideas clave\n" + s.keyPoints.map((p) => `• ${p}`).join("\n"));
-  if (s.actionItems.length) parts.push("Pendientes\n" + s.actionItems.map((p) => `☐ ${p}`).join("\n"));
+  if (s.keyPoints.length) parts.push(`## Ideas clave\n${list(s.keyPoints)}`);
+  if (s.actionItems.length) parts.push(`## Pendientes\n${tasks(s.actionItems)}`);
   parts.push(`${MARK}${original}`);
   return parts.join("\n\n");
 }
 
 export function formatMeeting(m: Meeting, original: string): string {
   const parts = [m.summary];
-  if (m.decisions.length) parts.push("Decisiones\n" + m.decisions.map((d) => `• ${d}`).join("\n"));
+  if (m.decisions.length) parts.push(`## Decisiones\n${list(m.decisions)}`);
   if (m.actions.length) {
     parts.push(
-      "Pendientes\n" +
-        m.actions
-          .map((a) => `☐ ${a.task}${a.owner ? ` — ${a.owner}` : ""}${a.due ? ` — ${a.due}` : ""}`)
-          .join("\n"),
+      `## Pendientes\n${tasks(m.actions.map((a) => `${a.task}${a.owner ? ` — ${a.owner}` : ""}${a.due ? ` — ${a.due}` : ""}`))}`,
     );
   }
   parts.push(`${MARK}${original}`);
@@ -82,5 +85,5 @@ export function formatMeeting(m: Meeting, original: string): string {
 }
 
 export function formatGuide(g: Guide): string {
-  return g.sections.map((s) => `${s.heading}\n${s.points.map((p) => `• ${p}`).join("\n")}`).join("\n\n");
+  return g.sections.map((s) => `## ${s.heading}\n${list(s.points)}`).join("\n\n");
 }

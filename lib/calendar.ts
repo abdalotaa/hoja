@@ -3,22 +3,43 @@ export interface CalEvent {
   date: string; // YYYY-MM-DD
 }
 
-/** Finds checklist lines (☐ …) that carry a YYYY-MM-DD date. */
+export interface TaskLine {
+  title: string;
+  date: string;
+  done: boolean;
+}
+
+const TASK_RE = /^\s*(?:[-*]\s+\[([ xX])\]|([☐☑]))\s*(.*)$/;
+
+/** Reads a checklist line ("- [ ] tarea — 2026-11-05" or the older "☐ tarea — 2026-11-05") that carries a date. */
+export function parseTaskLine(line: string): TaskLine | null {
+  const m = line.match(TASK_RE);
+  if (!m) return null;
+  const date = m[3].match(/(\d{4}-\d{2}-\d{2})/);
+  if (!date) return null;
+  const parts = m[3]
+    .replace(date[1], "")
+    .split("—")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return null;
+  return { title: parts.join(" — "), date: date[1], done: m[1] ? m[1] !== " " : m[2] === "☑" };
+}
+
+/** The same line with its checkbox flipped. */
+export function toggleTaskLine(line: string): string {
+  return line
+    .replace(/\[([ xX])\]/, (_, c: string) => (c === " " ? "[x]" : "[ ]"))
+    .replace(/[☐☑]/, (c) => (c === "☐" ? "☑" : "☐"));
+}
+
+/** Finds checklist lines that carry a YYYY-MM-DD date. */
 export function extractEvents(text: string): CalEvent[] {
-  const out: CalEvent[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim().startsWith("☐")) continue;
-    const m = line.match(/(\d{4}-\d{2}-\d{2})/);
-    if (!m) continue;
-    const parts = line
-      .replace("☐", "")
-      .replace(m[1], "")
-      .split("—")
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (parts.length) out.push({ title: parts.join(" — "), date: m[1] });
-  }
-  return out;
+  return text
+    .split("\n")
+    .map(parseTaskLine)
+    .filter((t): t is TaskLine => t !== null)
+    .map((t) => ({ title: t.title, date: t.date }));
 }
 
 const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");

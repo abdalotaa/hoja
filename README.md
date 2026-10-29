@@ -10,6 +10,8 @@ npm run dev
 ## Qué hace
 
 - **Lienzo:** notas como ventanas (arrastrar, redimensionar, etiquetar, buscar) y **conexiones** entre ellas. Plantillas, mapas y notas nuevas se colocan en espacio libre, sin pisar lo que ya tienes. El lienzo no tiene bordes: te mueves arrastrando el fondo, haces zoom con Ctrl/Cmd + rueda (o el pellizco del trackpad) y, al arrastrar una nota cerca de la orilla, la vista avanza sola. Abajo a la izquierda: zoom, **Ajustar** (ver todo, centrado) y **Ordenar** (acomoda las notas en filas, con deshacer).
+- **Documentos:** cada nota se abre en un panel lateral (con botón para ampliarlo a pantalla completa) con un editor de texto enriquecido: títulos, listas, tareas, citas, negritas. Se guarda como Markdown. Las tarjetas del lienzo muestran una vista previa.
+- **Notas entrelazadas:** escribe `[[` para enlazar otra nota (o crearla). Cada enlace dibuja solo una flecha punteada en el lienzo, y cada nota muestra su índice, las notas que la mencionan y a las que enlaza.
 - **Mapas mentales:** cualquier nota se expande en un mapa con IA ("IA ✦ → Expandir en mapa mental").
 - **Tablas:** notas tipo hoja de cálculo (texto, número, dinero, fecha) con totales, promedio y resumen por categoría; plantillas de control de gastos, presupuesto, clientes, horario y calificaciones; descarga en CSV.
 - **Calendario:** vista mensual con tus eventos y las tareas con fecha (`☐ tarea — AAAA-MM-DD`) de tus notas; marcar una tarea la tacha en la nota. Exporta a .ics.

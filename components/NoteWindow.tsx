@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TONES, TONE_LABEL, type Note } from "@/lib/notes";
 import TableEditor from "./TableEditor";
 import { downloadIcs, extractEvents } from "@/lib/calendar";
 import { downloadCsv, parseTable } from "@/lib/table";
+import { stripMarkdown } from "@/lib/wiki";
 
 export type NoteAction = "summarize" | "map" | "cards";
 
@@ -20,10 +21,12 @@ interface Props {
   zoom?: number;
   dragging?: boolean;
   index?: number;
+  onOpen: (id: string) => void;
+  backlinks?: number;
   onDragStart: (id: string, e: React.PointerEvent) => void;
 }
 
-export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1, dragging = false, index = 0, onDragStart }: Props) {
+export default function NoteWindow({ note, active, busy, onChange, onFocus, onDelete, onAction, onConnect, zoom = 1, dragging = false, index = 0, onOpen, backlinks = 0, onDragStart }: Props) {
   const [menu, setMenu] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const nodeRef = useRef<HTMLTextAreaElement>(null);
@@ -59,6 +62,7 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
 
   const cycleTone = () => onChange(note.id, { tone: TONES[(TONES.indexOf(note.tone) + 1) % TONES.length] });
   const events = extractEvents(note.text);
+  const preview = useMemo(() => stripMarkdown(note.text), [note.text]);
   const run = (a: NoteAction) => {
     setMenu(false);
     onAction(note.id, a);
@@ -131,19 +135,25 @@ export default function NoteWindow({ note, active, busy, onChange, onFocus, onDe
         {isTable ? (
           <TableEditor value={note.text} onChange={(text) => onChange(note.id, { text })} />
         ) : (
-          <textarea
-            className="note-text"
-            value={note.text}
-            placeholder="Escribe aquí…"
-            aria-label="Contenido de la nota"
-            onChange={(e) => onChange(note.id, { text: e.target.value })}
-          />
+          <button type="button" className="note-preview" onClick={() => onOpen(note.id)} aria-label="Abrir la nota para escribir">
+            {preview ? <span>{preview}</span> : <span className="note-preview-empty">Escribe aquí…</span>}
+          </button>
         )}
         <div className="note-foot">
           <button className="tag" data-tone={note.tone} onClick={cycleTone} title="Cambiar etiqueta">
             {TONE_LABEL[note.tone]}
           </button>
+          {backlinks > 0 && (
+            <span className="tag" title="Notas que enlazan a esta" style={{ background: "var(--mint)" }}>
+              ↩ {backlinks}
+            </span>
+          )}
           <span className="spacer" />
+          {!isTable && (
+            <button className="tag" onClick={() => onOpen(note.id)} title="Abrir para escribir (doble clic en la tarjeta)">
+              Abrir ⤢
+            </button>
+          )}
           {isTable ? (
             <button className="tag ai" onClick={() => downloadCsv(parseTable(note.text), note.title || "tabla")} title="Descargar como CSV (abre en Excel o Sheets)">
               CSV ↓

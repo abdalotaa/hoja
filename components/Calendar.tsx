@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ViewTransition, useEffect, useMemo, useState } from "react";
 import AppBar from "./AppBar";
-import { downloadIcs } from "@/lib/calendar";
+import { downloadIcs, parseTaskLine, toggleTaskLine } from "@/lib/calendar";
 import { dayLabel, fromYmd, monthGrid, monthLabel, ymd } from "@/lib/dates";
 import { CARDS, EVENTS, NOTES, type CalendarEvent } from "@/lib/model";
 import { useSynced } from "@/lib/useSynced";
@@ -53,17 +53,13 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
     for (const n of notesStore.items) {
       if (n.kind === "node" || n.kind === "table") continue;
       n.text.split("\n").forEach((line, i) => {
-        const t = line.trim();
-        if (!t.startsWith("☐") && !t.startsWith("☑")) return;
-        const m = t.match(/(\d{4}-\d{2}-\d{2})/);
-        if (!m) return;
-        const parts = t.slice(1).replace(m[1], "").split("—").map((p) => p.trim()).filter(Boolean);
-        if (!parts.length) return;
+        const task = parseTaskLine(line);
+        if (!task) return;
         out.push({
           key: `t-${n.id}-${i}`,
-          title: parts.join(" — "),
-          date: m[1],
-          done: t.startsWith("☑"),
+          title: task.title,
+          date: task.date,
+          done: task.done,
           kind: "task",
           source: n.title.trim() || "Sin título",
           noteId: n.id,
@@ -96,7 +92,7 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
       all.map((n) => {
         if (n.id !== e.noteId) return n;
         const lines = n.text.split("\n");
-        lines[e.line!] = lines[e.line!].replace(/[☐☑]/, e.done ? "☐" : "☑");
+        lines[e.line!] = toggleTaskLine(lines[e.line!]);
         return { ...n, text: lines.join("\n"), updatedAt: Date.now() };
       }),
     );

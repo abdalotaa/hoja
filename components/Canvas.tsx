@@ -1,6 +1,7 @@
 "use client";
 
 import { ViewTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import AppBar from "./AppBar";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
@@ -18,6 +19,9 @@ import { newNote, type Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
 import { useSpeech } from "@/lib/useSpeech";
 import { useSynced } from "@/lib/useSynced";
+import { backlinksOf, derivedLinks } from "@/lib/wiki";
+
+const DocPanel = dynamic(() => import("./DocPanel"), { ssr: false });
 
 export default function Canvas({ userEmail }: { userEmail?: string }) {
   const cloud = Boolean(userEmail);
@@ -34,6 +38,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const [busy, setBusy] = useState<Map<string, NoteAction>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<"note" | "meeting">("note");
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
@@ -116,7 +121,19 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     const note = newNote(notes.length, ++topZ.current, viewportSpot());
     setNotes((all) => [...all, note]);
     setActiveId(note.id);
+    setOpenId(note.id);
   }, [notes.length, setNotes, viewportSpot]);
+
+  /** A note created from a [[link]] to a title that doesn't exist yet; it lands beside the note it was linked from. */
+  const createLinked = useCallback(
+    (title: string, near: Note) => {
+      const spot = spotFor({ w: 320, h: 260 }, { x: near.x + near.w + 80, y: near.y });
+      const fresh = { ...newNote(notes.length, ++topZ.current, spot), title };
+      setNotes((all) => [...all, fresh]);
+      return fresh.id;
+    },
+    [notes.length, setNotes, spotFor],
+  );
 
   const change = useCallback(
     (id: string, patch: Partial<Note>) => {
@@ -559,6 +576,14 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     }
   }, []);
 
+  const openNote_ = notes.find((n) => n.id.toLowerCase() === openId?.toLowerCase());
+  useEffect(() => {
+    if (openId && ready && !openNote_) setOpenId(null);
+  }, [openId, ready, openNote_]);
+
+  const textLinks = useMemo(() => derivedLinks(notes), [notes]);
+  const backCounts = useMemo(() => new Map(notes.map((n) => [n.id, backlinksOf(notes, n.id).length])), [notes]);
+
   const q = query.trim().toLowerCase();
   const visible = useMemo(
     () => (q ? notes.filter((n) => `${n.title} ${noteText(n)}`.toLowerCase().includes(q)) : notes),
@@ -566,6 +591,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   );
   const shownIds = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
   const shownLinks = useMemo(() => links.filter((l) => shownIds.has(l.from) && shownIds.has(l.to)), [links, shownIds]);
+  const shownAuto = useMemo(() => textLinks.filter((l) => shownIds.has(l.from) && shownIds.has(l.to)), [textLinks, shownIds]);
 
   return (
     <div className="app">
@@ -661,7 +687,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           style={{ width: world.w, height: world.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
         >
         <div className="world" style={{ left: -world.ox, top: -world.oy }}>
-          <LinksLayer notes={visible} links={shownLinks} draft={draft} onRemove={(id) => removeLinks([id])} />
+          <LinksLayer notes={visible} links={shownLinks} auto={shownAuto} draft={draft} onRemove={(id) => removeLinks([id])} />
           {visible.map((n) => (
             <NoteWindow
               key={n.id}
@@ -675,6 +701,11 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               onConnect={startConnect}
               zoom={zoom}
               index={visible.indexOf(n)}
+              onOpen={(id) => {
+                focus(id);
+                setOpenId(id);
+              }}
+              backlinks={backCounts.get(n.id) ?? 0}
               dragging={draggingId === n.id}
               onDragStart={startDrag}
             />
@@ -724,6 +755,23 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
             Notas ordenadas.
             <button onClick={undoTidy}>Deshacer</button>
           </div>
+        )}
+        {openNote_ && (
+          <DocPanel
+            note={openNote_}
+            notes={notes}
+            onChange={change}
+            onOpen={(id) => {
+              const target = notes.find((n) => n.id.toLowerCase() === id.toLowerCase());
+              if (target) {
+                focus(target.id);
+                setOpenId(target.id);
+                scrollToWorld(target.x, target.y, 120);
+              }
+            }}
+            onCreate={createLinked}
+            onClose={() => setOpenId(null)}
+          />
         )}
         {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
         {ready && notes.length === 0 && !speech.listening && (
