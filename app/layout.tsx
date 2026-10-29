@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   description: "Un note taker para estudiantes, equipos y emprendedores. Tus notas viven como ventanas sobre un lienzo.",
 };
 
-export const viewport: Viewport = { themeColor: "#17140f" };
+export const viewport: Viewport = { themeColor: "#17140f", viewportFit: "cover" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

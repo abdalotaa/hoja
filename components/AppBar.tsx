@@ -23,7 +23,7 @@ export default function AppBar({ current, userEmail, children }: Props) {
           <img src="/m4-symbol.svg" alt="" width={26} height={26} />
           Hoja
         </div>
-        <nav className="tabs" aria-label="Secciones">
+        <nav className="tabs" data-tour="tabs" aria-label="Secciones">
           {TABS.map((t, i) => (
             <Link
               key={t.id}

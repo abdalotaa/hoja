@@ -588,3 +588,72 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .wiki-pop button[data-active="true"] { background: var(--butter); }
 @media (max-width: 820px) { .doc-panel { top: 88px; right: 8px; left: 8px; width: auto; } }
 @media (prefers-reduced-motion: reduce) { .doc-panel { animation: none; transition: none; } }
+
+/* ───────── first-run tour ───────── */
+.tour {
+  position: fixed; right: 24px; bottom: 24px; z-index: 90; width: min(380px, calc(100vw - 32px));
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; box-shadow: 8px 8px 0 var(--accent); overflow: hidden;
+  animation: panel-in 380ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.tour-skip { border: 0; background: transparent; padding: 4px 6px; font-size: 13px; font-weight: 700; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.tour-body { padding: 16px 18px 18px; display: grid; gap: 10px; }
+.tour-body h2 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.035em; line-height: 1.05; }
+.tour-body p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--body-ink); }
+.tour-dots { display: flex; gap: 6px; }
+.tour-dots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink); }
+.tour-dots i[data-on="true"] { background: var(--ink); }
+.tour-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.tabs.tour-hl { border-radius: 999px; }
+.tour-hl { position: relative; z-index: 95; box-shadow: 0 0 0 4px var(--bg), 0 0 0 7px var(--accent) !important; animation: tour-pulse 1.4s ease-in-out infinite; }
+@keyframes tour-pulse { 50% { box-shadow: 0 0 0 4px var(--bg), 0 0 0 11px rgba(140, 47, 30, 0.45); } }
+@media (prefers-reduced-motion: reduce) { .tour, .tour-hl { animation: none; } }
+
+/* ───────── phones ───────── */
+/* On a desktop the tool buttons just flow in the top bar; on a phone they become a thumb-reach dock. */
+.bar-dock { display: contents; }
+@media (max-width: 700px) {
+  .bar { padding: 8px 10px; gap: 6px; row-gap: 6px; }
+  .bar .search { flex: 1 1 100%; min-width: 0; width: 100%; font-size: 16px; }
+  .bar .spacer { display: none; }
+  .bar .sync { flex: 1 1 0; min-width: 0; text-align: right; font-size: 10px; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sync-long { display: none; }
+  .canvas { scrollbar-width: none; }
+  .canvas::-webkit-scrollbar { display: none; }
+  .bar-dock {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; gap: 8px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 2px solid var(--ink);
+    overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .bar-dock::-webkit-scrollbar { display: none; }
+  .bar-dock > .btn:not(.line) { order: -1; }
+  .bar-dock .btn { flex: none; min-height: 44px; padding: 10px 16px; font-size: 14px; }
+  .bar-dock .menu { flex: none; position: static; }
+  .menu-pop { position: fixed; left: 10px; right: 10px; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); min-width: 0; max-height: 60vh; overflow: auto; }
+  .menu-pop button { padding: 14px 12px; }
+  .app:has(.bar-dock) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+  .zoombar { left: 10px; bottom: calc(78px + env(safe-area-inset-bottom)); }
+  .zoombar button { padding: 8px 10px; min-width: 36px; }
+  .zoom-pct { min-width: 54px; }
+  .live, .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .ask { left: 10px; right: 10px; width: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .tour { top: 132px; bottom: auto; left: 10px; right: 10px; width: auto; }
+  .doc-panel, .doc-panel[data-expanded="true"] { top: 8px; bottom: 8px; left: 8px; right: 8px; width: auto; }
+  .doc-panel .note-bar .tag { display: none; }
+  .doc-main { padding: 14px 16px 32px; }
+  .doc-prose { font-size: 16px; }
+
+  /* 16px inputs: iOS Safari zooms the whole page on anything smaller. */
+  .note-title, .note-text, .doc-title { font-size: 16px; }
+  .note-title { font-size: 20px; }
+  .doc-title { font-size: 24px; }
+  .note-bar .dot { width: 16px; height: 16px; }
+  .empty h1 { font-size: 56px; }
+  .empty p { font-size: 22px; }
+}
+@media (max-width: 700px) {
+  /* the month and year must stay readable next to the ← Hoy → buttons */
+  .cal-main .note-bar { gap: 4px; padding: 8px 10px; }
+  .cal-main .note-label { margin-left: 4px; letter-spacing: 0.06em; font-size: 10px; }
+  .cal-main .note-bar .tag { padding: 4px 8px; }
+}

@@ -4,6 +4,7 @@ import { ViewTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import dynamic from "next/dynamic";
 import AppBar from "./AppBar";
 import SyncStatus from "./SyncStatus";
+import Tour from "./Tour";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
 import Menu from "./Menu";
@@ -60,6 +61,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
   const server = rec.supported;
   const listening = server ? rec.recording : speech.listening;
   const canDictate = server || speech.supported;
+  const [touring, setTouring] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [orphans, setOrphans] = useState<SessionMeta[]>([]);
@@ -114,7 +116,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     if (!ready) return;
     const x = rects.length ? Math.min(...rects.map((r) => r.x)) : 0;
     const y = rects.length ? Math.min(...rects.map((r) => r.y)) : 0;
-    scrollToWorld(x, y, 60, false);
+    scrollToWorld(x, y, window.innerWidth < 700 ? 20 : 60, false);
     // only when loading finishes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
@@ -124,8 +126,10 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     (size: { w: number; h: number }, near?: { x: number; y: number }) => {
       const c = canvasRef.current;
       const z = zoomRef.current;
+      // On a phone a 320px note has to fit between the edges, so the side margin shrinks to center it.
+      const side = c ? Math.max(10, Math.min(60, (c.clientWidth - size.w * z) / 2)) : 60;
       const preferred = near ?? {
-        x: originRef.current.x + ((c?.scrollLeft ?? 0) + 60) / z,
+        x: originRef.current.x + ((c?.scrollLeft ?? 0) + side) / z,
         y: originRef.current.y + ((c?.scrollTop ?? 0) + 50) / z,
       };
       return freeSpot(rects, size, preferred);
@@ -139,6 +143,25 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
     setNotes((all) => [...all, note]);
     setActiveId(note.id);
     setOpenId(note.id);
+  }, [notes.length, setNotes, viewportSpot]);
+
+  const addSample = useCallback(() => {
+    const note = newNote(notes.length, ++topZ.current, viewportSpot());
+    note.title = "Bienvenida a Hoja";
+    note.tone = "butter";
+    note.text = [
+      "Hoja es un lienzo: cada nota es una ventana que puedes mover.",
+      "",
+      "## Pruébalo",
+      "- [ ] Arrastra esta nota por su barra",
+      "- [ ] Abre una nota nueva y escribe [[ para enlazarlas",
+      "- [ ] Pulsa Reunión o Dictar y habla",
+      "- [ ] Abre Estudio para repasar con tarjetas",
+      "",
+      "Puedes borrar esta nota cuando quieras.",
+    ].join("\n");
+    setNotes((all) => [...all, note]);
+    setActiveId(note.id);
   }, [notes.length, setNotes, viewportSpot]);
 
   /** A note created from a [[link]] to a title that doesn't exist yet; it lands beside the note it was linked from. */
@@ -698,7 +721,8 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button className="btn line" onClick={() => setAsking((a) => !a)} aria-pressed={asking}>
+        <div className="bar-dock">
+        <button className="btn line" data-tour="ask" onClick={() => setAsking((a) => !a)} aria-pressed={asking}>
           Preguntar ✦
         </button>
         <Menu
@@ -711,6 +735,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
             { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(notes, links), disabled: notes.length === 0 },
             { label: "Respaldo completo (JSON)", hint: "Notas, conexiones, tarjetas y eventos", onSelect: () => exportJson(notes, links, cardsStore.items, eventsStore.items), disabled: !ready },
             { label: "Importar respaldo (JSON)", hint: "Agrega una copia sin reemplazar tus datos", onSelect: () => importRef.current?.click(), disabled: !ready },
+            { label: "Ver el recorrido", hint: "Una vuelta rápida por Hoja", onSelect: () => setTouring(true) },
             ...(cloud
               ? [
                   { label: "Compartir lienzo (solo lectura)", hint: "Crea un enlace y lo copia", onSelect: share, disabled: notes.length === 0 },
@@ -722,6 +747,7 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
         {canDictate && (
           <>
             <button
+              data-tour="voice"
               className={`btn line rec${listening && mode === "meeting" ? " on" : ""}`}
               disabled={listening && mode !== "meeting"}
               onClick={() => toggleDictation("meeting")}
@@ -740,10 +766,12 @@ export default function Canvas({ userEmail, userId }: { userEmail?: string; user
             </button>
           </>
         )}
-        <button className="btn" onClick={add}>
+        <button className="btn" data-tour="new" onClick={add}>
           + Nueva nota
         </button>
+        </div>
       </AppBar>
+      <Tour ready={ready} empty={notes.length === 0} forceOpen={touring} onClose={() => setTouring(false)} onSample={addSample} />
 
       <ViewTransition
       name="page"
