@@ -17,9 +17,9 @@ function clientIp(request: Request): string {
 }
 
 /** Browser requests from our own origin only. Cross-site pages and bare curl calls are rejected. */
-function isFromApp(request: Request): boolean {
+function isFromApp(request: Request, type = "application/json"): boolean {
   if (request.headers.get(CLIENT_HEADER) !== "1") return false;
-  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return false;
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith(type)) return false;
 
   const site = request.headers.get("sec-fetch-site");
   if (site) return site === "same-origin";
@@ -84,4 +84,49 @@ export async function guardAiRequest(request: Request, userId?: string): Promise
     return { ok: false, status: 400, error: "Solicitud inválida." };
   }
   return { ok: true, body: body as Record<string, unknown> };
+}
+
+/** Voice chunks: ~25 s of compressed audio each, so a long meeting is a few hundred calls. Limits are per person. */
+export const MAX_AUDIO_BYTES = 4_000_000;
+const AUDIO_PER_MINUTE = 12;
+const AUDIO_PER_DAY = 600;
+const AUDIO_GLOBAL_PER_DAY = 4000;
+const audioHits = new Map<string, number[]>();
+let audioGlobal: number[] = [];
+
+function audioOverLimit(request: Request, userId?: string): boolean {
+  const now = Date.now();
+  const key = userId ? `user:${userId}` : clientIp(request);
+
+  audioGlobal = audioGlobal.filter((t) => now - t < DAY);
+  if (audioGlobal.length >= AUDIO_GLOBAL_PER_DAY) return true;
+
+  const recent = (audioHits.get(key) ?? []).filter((t) => now - t < DAY);
+  const lastMinute = recent.filter((t) => now - t < 60_000).length;
+  if (recent.length >= AUDIO_PER_DAY || lastMinute >= AUDIO_PER_MINUTE) {
+    audioHits.set(key, recent);
+    return true;
+  }
+
+  recent.push(now);
+  audioHits.set(key, recent);
+  audioGlobal.push(now);
+
+  if (audioHits.size > 5000) {
+    for (const [k, times] of audioHits) if (!times.some((t) => now - t < DAY)) audioHits.delete(k);
+  }
+  return false;
+}
+
+export type AudioGuardResult = { ok: true } | { ok: false; status: number; error: string };
+
+/** Same-origin multipart uploads with a bounded size and per-person rate limits, before any paid call. */
+export function guardAudioRequest(request: Request, userId?: string): AudioGuardResult {
+  if (!isFromApp(request, "multipart/form-data")) return { ok: false, status: 403, error: "Solicitud no permitida." };
+  const length = Number(request.headers.get("content-length") ?? 0);
+  if (length > MAX_AUDIO_BYTES) return { ok: false, status: 413, error: "El audio es demasiado largo." };
+  if (audioOverLimit(request, userId)) {
+    return { ok: false, status: 429, error: "Demasiados audios seguidos. Intenta en un momento." };
+  }
+  return { ok: true };
 }

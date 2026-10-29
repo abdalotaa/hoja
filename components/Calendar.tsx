@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ViewTransition, useEffect, useMemo, useState } from "react";
 import AppBar from "./AppBar";
+import SyncStatus from "./SyncStatus";
 import { downloadIcs, parseTaskLine, toggleTaskLine } from "@/lib/calendar";
 import { dayLabel, fromYmd, monthGrid, monthLabel, ymd } from "@/lib/dates";
 import { CARDS, EVENTS, NOTES, type CalendarEvent } from "@/lib/model";
@@ -23,11 +24,11 @@ interface Entry {
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-export default function Calendar({ userEmail }: { userEmail?: string }) {
+export default function Calendar({ userEmail, userId }: { userEmail?: string; userId?: string }) {
   const cloud = Boolean(userEmail);
-  const eventsStore = useSynced(EVENTS, cloud);
-  const notesStore = useSynced(NOTES, cloud);
-  const cardsStore = useSynced(CARDS, cloud);
+  const eventsStore = useSynced(EVENTS, cloud, userId);
+  const notesStore = useSynced(NOTES, cloud, userId);
+  const cardsStore = useSynced(CARDS, cloud, userId);
 
   const [today, setToday] = useState<string | null>(null);
   const [cursor, setCursor] = useState<{ y: number; m: number } | null>(null);
@@ -35,10 +36,13 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
   const [title, setTitle] = useState("");
 
   useEffect(() => {
-    const now = new Date();
-    setToday(ymd(now));
-    setSelected(ymd(now));
-    setCursor({ y: now.getFullYear(), m: now.getMonth() });
+    const timer = setTimeout(() => {
+      const now = new Date();
+      setToday(ymd(now));
+      setSelected(ymd(now));
+      setCursor({ y: now.getFullYear(), m: now.getMonth() });
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const entries = useMemo(() => {
@@ -126,6 +130,7 @@ export default function Calendar({ userEmail }: { userEmail?: string }) {
   return (
     <div className="app study-app">
       <AppBar current="calendario" userEmail={userEmail}>
+        <SyncStatus stores={[notesStore, cardsStore, eventsStore]} cloud={cloud} />
         <button className="btn line" onClick={exportAll} disabled={!entries.some((e) => !e.done)} title="Descarga un .ics con todo lo pendiente">
           Exportar .ics
         </button>

@@ -3,35 +3,39 @@
 import { ViewTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import AppBar from "./AppBar";
+import SyncStatus from "./SyncStatus";
 import AskDialog from "./AskDialog";
 import LinksLayer from "./LinksLayer";
 import Menu from "./Menu";
 import NoteWindow, { type NoteAction } from "./NoteWindow";
 import { ai, extractOriginal, formatMeeting, formatSummary } from "@/lib/ai";
 import { exportJson, exportMarkdown } from "@/lib/export";
+import { parseBackup, copyBackup } from "@/lib/backup";
 import { createShare, stopSharing } from "@/lib/share";
 import { TEMPLATES, buildTemplate, templateSize } from "@/lib/templates";
 import { buildMindMap } from "@/lib/mindmap";
 import { arrange } from "@/lib/arrange";
 import { freeSpot, worldOf } from "@/lib/placement";
-import { CARDS, LINKS, NOTES, type Card } from "@/lib/model";
+import { CARDS, EVENTS, LINKS, NOTES, type Card } from "@/lib/model";
 import { newNote, type Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
 import { useSpeech } from "@/lib/useSpeech";
+import { deleteSession, listSessions, transcribeStored, useRecorder, type SessionMeta } from "@/lib/useRecorder";
 import { useSynced } from "@/lib/useSynced";
 import { backlinksOf, derivedLinks } from "@/lib/wiki";
 
 const DocPanel = dynamic(() => import("./DocPanel"), { ssr: false });
 
-export default function Canvas({ userEmail }: { userEmail?: string }) {
+export default function Canvas({ userEmail, userId }: { userEmail?: string; userId?: string }) {
   const cloud = Boolean(userEmail);
-  const notesStore = useSynced(NOTES, cloud);
-  const linksStore = useSynced(LINKS, cloud);
-  const cardsStore = useSynced(CARDS, cloud);
+  const notesStore = useSynced(NOTES, cloud, userId);
+  const linksStore = useSynced(LINKS, cloud, userId);
+  const cardsStore = useSynced(CARDS, cloud, userId);
+  const eventsStore = useSynced(EVENTS, cloud, userId);
+  const importRef = useRef<HTMLInputElement>(null);
   const { items: notes, setItems: setNotes } = notesStore;
   const { items: links, setItems: setLinks } = linksStore;
-  const ready = notesStore.ready && linksStore.ready;
-  const syncError = notesStore.error || linksStore.error || cardsStore.error;
+  const ready = notesStore.ready && linksStore.ready && cardsStore.ready && eventsStore.ready;
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -51,6 +55,19 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   const canvasRef = useRef<HTMLElement>(null);
   const topZ = useRef(1);
   const speech = useSpeech("es-MX");
+  // Recording + server transcription when the browser can record; the browser's own dictation is the fallback.
+  const rec = useRecorder();
+  const server = rec.supported;
+  const listening = server ? rec.recording : speech.listening;
+  const canDictate = server || speech.supported;
+  const [stopping, setStopping] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [orphans, setOrphans] = useState<SessionMeta[]>([]);
+  const savedPartial = useRef("");
+
+  useEffect(() => {
+    void listSessions().then(setOrphans);
+  }, []);
 
   useEffect(() => {
     if (ready) topZ.current = Math.max(topZ.current, ...notes.map((n) => n.z), 1);
@@ -485,23 +502,16 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
     canvasRef.current?.releasePointerCapture(e.pointerId);
   };
 
-  const toggleDictation = useCallback(
-    (as: "note" | "meeting") => {
-      if (!speech.listening) {
-        setMode(as);
-        speech.start();
-        return;
-      }
-      speech.stop();
-      const transcript = `${speech.finalText} ${speech.interim}`.trim();
-      if (!transcript) return;
+  /** Turns a finished transcript into a note and, for meetings, extracts decisions and tasks. */
+  const saveTranscript = useCallback(
+    (transcript: string, as: "note" | "meeting") => {
       const note = newNote(notes.length, ++topZ.current, viewportSpot());
-      note.title = mode === "meeting" ? "Reunión" : "Nota de voz";
+      note.title = as === "meeting" ? "Reunión" : "Nota de voz";
       note.text = transcript;
       setNotes((all) => [...all, note]);
       setActiveId(note.id);
       if (transcript.length < 20) return;
-      if (mode === "note") {
+      if (as === "note") {
         void runSummary(note.id, transcript, true);
         return;
       }
@@ -526,8 +536,77 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         }
       })();
     },
-    [speech, mode, notes.length, runSummary, setNotes, viewportSpot, setBusyFor],
+    [notes.length, runSummary, setNotes, viewportSpot, setBusyFor],
   );
+
+  const toggleDictation = useCallback(
+    async (as: "note" | "meeting") => {
+      if (server) {
+        if (stopping) return;
+        if (!rec.recording) {
+          setMode(as);
+          await rec.start(as);
+          return;
+        }
+        setStopping(true);
+        const r = await rec.stop();
+        setStopping(false);
+        if (r.failed > 0) {
+          // Keep the audio: the note is created once it is complete, from «Recuperar».
+          setNotice(`${r.error ?? "No se pudo transcribir todo."} El audio quedó guardado: usa «Recuperar» para reintentar.`);
+          setOrphans(await listSessions());
+          return;
+        }
+        if (r.text) saveTranscript(r.text, as);
+        else setNotice("No se escuchó nada. Intenta de nuevo.");
+        if (r.id) await deleteSession(r.id);
+        return;
+      }
+      if (!speech.listening) {
+        setMode(as);
+        savedPartial.current = "";
+        speech.start();
+        return;
+      }
+      speech.stop();
+      const transcript = `${speech.finalText} ${speech.interim}`.trim();
+      if (!transcript) return;
+      savedPartial.current = transcript;
+      saveTranscript(transcript, as);
+    },
+    [server, stopping, rec, speech, saveTranscript],
+  );
+
+  // Browser dictation can fail mid-session (network, service). Keep what was heard instead of dropping it.
+  useEffect(() => {
+    if (server || speech.listening || !speech.error) return;
+    const heard = `${speech.finalText} ${speech.interim}`.trim();
+    if (!heard || savedPartial.current === heard) return;
+    savedPartial.current = heard;
+    saveTranscript(heard, mode);
+    setNotice("Se interrumpió la escucha. Guardé lo que alcancé a oír.");
+  }, [server, speech.listening, speech.error, speech.finalText, speech.interim, mode, saveTranscript]);
+
+  const recover = useCallback(
+    async (meta: SessionMeta) => {
+      setRecovering(true);
+      const r = await transcribeStored(meta.id);
+      setRecovering(false);
+      if (r.failed > 0) {
+        setNotice(`${r.error ?? "No se pudo transcribir."} El audio sigue guardado; intenta de nuevo en un momento.`);
+        return;
+      }
+      if (r.text) saveTranscript(r.text, meta.mode);
+      await deleteSession(meta.id);
+      setOrphans(await listSessions());
+    },
+    [saveTranscript],
+  );
+
+  const discardRecording = useCallback(async (id: string) => {
+    await deleteSession(id);
+    setOrphans(await listSessions());
+  }, []);
 
   const applyTemplate = useCallback(
     (id: string) => {
@@ -577,9 +656,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
   }, []);
 
   const openNote_ = notes.find((n) => n.id.toLowerCase() === openId?.toLowerCase());
-  useEffect(() => {
-    if (openId && ready && !openNote_) setOpenId(null);
-  }, [openId, ready, openNote_]);
+
 
   const textLinks = useMemo(() => derivedLinks(notes), [notes]);
   const backCounts = useMemo(() => new Map(notes.map((n) => [n.id, backlinksOf(notes, n.id).length])), [notes]);
@@ -595,12 +672,24 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
 
   return (
     <div className="app">
+      <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file || !ready) return;
+        try {
+          if (file.size > 20_000_000) throw new Error("El respaldo supera el límite de 20 MB.");
+          const backup = copyBackup(parseBackup(await file.text()));
+          setNotes((all) => [...all, ...backup.notes]);
+          setLinks((all) => [...all, ...backup.links]);
+          cardsStore.setItems((all) => [...all, ...backup.cards]);
+          eventsStore.setItems((all) => [...all, ...backup.events]);
+          setNotice(`Respaldo importado: ${backup.notes.length} notas, ${backup.cards.length} tarjetas y ${backup.events.length} eventos.`);
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : "No se pudo importar el respaldo.");
+        }
+      }} />
       <AppBar current="lienzo" userEmail={userEmail}>
-        {syncError && (
-          <span className="mono" style={{ color: "var(--accent)" }} role="status">
-            sin conexión
-          </span>
-        )}
+        <SyncStatus stores={[notesStore, linksStore, cardsStore, eventsStore]} cloud={cloud} />
         <input
           className="search"
           type="search"
@@ -620,7 +709,8 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           label="Más ▾"
           items={[
             { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(notes, links), disabled: notes.length === 0 },
-            { label: "Respaldo completo (JSON)", hint: "Notas, mapas y posiciones", onSelect: () => exportJson(notes, links), disabled: notes.length === 0 },
+            { label: "Respaldo completo (JSON)", hint: "Notas, conexiones, tarjetas y eventos", onSelect: () => exportJson(notes, links, cardsStore.items, eventsStore.items), disabled: !ready },
+            { label: "Importar respaldo (JSON)", hint: "Agrega una copia sin reemplazar tus datos", onSelect: () => importRef.current?.click(), disabled: !ready },
             ...(cloud
               ? [
                   { label: "Compartir lienzo (solo lectura)", hint: "Crea un enlace y lo copia", onSelect: share, disabled: notes.length === 0 },
@@ -629,24 +719,24 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
               : []),
           ]}
         />
-        {speech.supported && (
+        {canDictate && (
           <>
             <button
-              className={`btn line rec${speech.listening && mode === "meeting" ? " on" : ""}`}
-              disabled={speech.listening && mode !== "meeting"}
+              className={`btn line rec${listening && mode === "meeting" ? " on" : ""}`}
+              disabled={listening && mode !== "meeting"}
               onClick={() => toggleDictation("meeting")}
               title="Graba una reunión y saca pendientes con fecha"
             >
               <span className="rec-dot" aria-hidden="true" />
-              {speech.listening && mode === "meeting" ? "Detener" : "Reunión"}
+              {listening && mode === "meeting" ? "Detener" : "Reunión"}
             </button>
             <button
-              className={`btn line rec${speech.listening && mode === "note" ? " on" : ""}`}
-              disabled={speech.listening && mode !== "note"}
+              className={`btn line rec${listening && mode === "note" ? " on" : ""}`}
+              disabled={listening && mode !== "note"}
               onClick={() => toggleDictation("note")}
             >
               <span className="rec-dot" aria-hidden="true" />
-              {speech.listening && mode === "note" ? "Detener" : "Dictar"}
+              {listening && mode === "note" ? "Detener" : "Dictar"}
             </button>
           </>
         )}
@@ -713,24 +803,65 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
         </div>
         </div>
         </div>
-        {(speech.listening || speech.error || notice) && (
+        {(listening || stopping || speech.error || rec.error || notice) && (
           <aside className="live ds-win" role="status" aria-live="polite">
             <div className="note-bar" style={{ cursor: "default" }}>
               <i className="dot close" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
               <i className="dot" aria-hidden="true" />
-              <span className="note-label mono">{speech.listening ? (mode === "meeting" ? "escuchando la reunión" : "escuchando") : "aviso"}</span>
+              <span className="note-label mono">
+                {listening
+                  ? `${mode === "meeting" ? "escuchando la reunión" : "escuchando"}${server ? ` · ${Math.floor(rec.elapsed / 60)}:${String(rec.elapsed % 60).padStart(2, "0")}` : ""}`
+                  : stopping
+                    ? "transcribiendo"
+                    : "aviso"}
+              </span>
             </div>
             <p className="live-text">
-              {speech.listening ? (
-                <>
-                  {speech.finalText} <span className="live-interim">{speech.interim}</span>
-                  {!speech.finalText && !speech.interim && <span className="live-interim">Habla, te escucho…</span>}
-                </>
+              {listening ? (
+                server ? (
+                  <>
+                    {rec.text} <span className="live-interim">{rec.pending > 0 ? "transcribiendo…" : ""}</span>
+                    {!rec.text && <span className="live-interim">Habla, te escucho… el texto aparece en bloques mientras hablas.</span>}
+                    {rec.error && <span className="live-interim"> {rec.error}</span>}
+                  </>
+                ) : (
+                  <>
+                    {speech.finalText} <span className="live-interim">{speech.interim}</span>
+                    {!speech.finalText && !speech.interim && <span className="live-interim">Habla, te escucho…</span>}
+                  </>
+                )
+              ) : stopping ? (
+                "Terminando de transcribir…"
               ) : (
-                (speech.error ?? notice)
+                (rec.error ?? speech.error ?? notice)
               )}
             </p>
+          </aside>
+        )}
+        {orphans.length > 0 && !listening && !stopping && !speech.error && !rec.error && !notice && (
+          <aside className="live ds-win" role="status" aria-live="polite">
+            <div className="note-bar" style={{ cursor: "default" }}>
+              <i className="dot close" aria-hidden="true" />
+              <i className="dot" aria-hidden="true" />
+              <i className="dot" aria-hidden="true" />
+              <span className="note-label mono">grabación sin guardar</span>
+            </div>
+            <p className="live-text">
+              {recovering
+                ? "Transcribiendo el audio guardado…"
+                : `Una grabación (${new Date(orphans[0].startedAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}) no terminó de guardarse.`}
+            </p>
+            {!recovering && (
+              <p className="live-text">
+                <button className="btn line" onClick={() => void recover(orphans[0])}>
+                  Recuperar
+                </button>{" "}
+                <button className="btn line" onClick={() => void discardRecording(orphans[0].id)}>
+                  Descartar
+                </button>
+              </p>
+            )}
           </aside>
         )}
         <div className="zoombar" role="group" aria-label="Zoom">
@@ -774,7 +905,7 @@ export default function Canvas({ userEmail }: { userEmail?: string }) {
           />
         )}
         {asking && <AskDialog notes={notes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
-        {ready && notes.length === 0 && !speech.listening && (
+        {ready && notes.length === 0 && !listening && (
           <div className="empty">
             <h1>Hoja</h1>
             <p className="hand">tu primera nota empieza aquí ↗</p>

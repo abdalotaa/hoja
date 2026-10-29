@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 interface Recognition {
   lang: string;
@@ -24,9 +24,13 @@ function getCtor(): Ctor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const subscribeSupport = () => () => {};
+const speechSupported = () => getCtor() !== null;
+const noSupport = () => false;
+
 /** Live dictation with the browser's Web Speech API. Keeps listening until stop() is called. */
 export function useSpeech(lang = "es-MX") {
-  const [supported, setSupported] = useState(false);
+  const supported = useSyncExternalStore(subscribeSupport, speechSupported, noSupport);
   const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState("");
   const [interim, setInterim] = useState("");
@@ -34,7 +38,6 @@ export function useSpeech(lang = "es-MX") {
   const rec = useRef<Recognition | null>(null);
   const wanted = useRef(false);
 
-  useEffect(() => setSupported(getCtor() !== null), []);
 
   const start = useCallback(() => {
     const Ctor = getCtor();

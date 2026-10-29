@@ -1,4 +1,4 @@
-import type { Link } from "./model";
+import type { Card, CalendarEvent, Link } from "./model";
 import type { Note } from "./notes";
 import { parseTable, tableToMarkdown } from "./table";
 
@@ -32,6 +32,6 @@ export function exportMarkdown(notes: Note[], links: Link[]) {
 }
 
 /** A full backup, including mind-map nodes and positions. */
-export function exportJson(notes: Note[], links: Link[]) {
-  download(`hoja-respaldo-${stamp()}.json`, "application/json", JSON.stringify({ app: "hoja", version: 1, notes, links }, null, 2));
+export function exportJson(notes: Note[], links: Link[], cards: Card[], events: CalendarEvent[]) {
+  download(`hoja-respaldo-${stamp()}.json`, "application/json", JSON.stringify({ app: "hoja", version: 2, notes, links, cards, events }, null, 2));
 }

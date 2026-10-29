@@ -1,5 +1,6 @@
 "use client";
 
+import NextLink from "next/link";
 import LinksLayer from "./LinksLayer";
 import type { Link } from "@/lib/model";
 import type { Note } from "@/lib/notes";
@@ -22,9 +23,9 @@ export default function SharedBoard({ title, notes: raw, links }: { title: strin
           Solo lectura{title ? ` · ${title}` : ""}
         </span>
         <span className="spacer" />
-        <a className="btn" href="/">
+        <NextLink className="btn" href="/">
           Crear mi Hoja
-        </a>
+        </NextLink>
       </header>
       <main className="canvas">
         <div className="board">

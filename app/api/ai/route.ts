@@ -27,11 +27,14 @@ export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "Falta configurar OPENAI_API_KEY en el servidor." }, { status: 500 });
 
-  // Monthly quota per person, counted in the database. If the function isn't installed yet, only the rate limits apply.
+  // Fail closed: a database failure must not bypass the paid usage quota.
   let remaining: number | undefined;
   if (authEnabled) {
     const { data, error } = await (await getServerClient()).rpc("bump_ai_usage", { max_per_month: MONTHLY_LIMIT });
-    if (!error && typeof data === "number") {
+    if (error || typeof data !== "number") {
+      return Response.json({ error: "No se pudo verificar tu cuota de IA. Intenta en un momento." }, { status: 503 });
+    }
+    if (typeof data === "number") {
       if (data < 0) {
         return Response.json({ error: `Llegaste al límite de ${MONTHLY_LIMIT} usos de IA este mes.` }, { status: 429 });
       }

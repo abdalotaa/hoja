@@ -3,21 +3,28 @@
 import Link from "next/link";
 import { ViewTransition, useCallback, useEffect, useMemo, useState } from "react";
 import AppBar from "./AppBar";
+import SyncStatus from "./SyncStatus";
 import { ai, formatGuide } from "@/lib/ai";
 import { CARDS, NOTES, type Card } from "@/lib/model";
 import { newNote } from "@/lib/notes";
 import { RATINGS, intervalLabel, schedule, type Rating } from "@/lib/srs";
 import { useSynced } from "@/lib/useSynced";
 
-export default function Study({ userEmail }: { userEmail?: string }) {
+export default function Study({ userEmail, userId }: { userEmail?: string; userId?: string }) {
   const cloud = Boolean(userEmail);
-  const cardsStore = useSynced(CARDS, cloud);
-  const notesStore = useSynced(NOTES, cloud);
+  const cardsStore = useSynced(CARDS, cloud, userId);
+  const notesStore = useSynced(NOTES, cloud, userId);
   const cards = cardsStore.items;
   const notes = notesStore.items.filter((n) => n.kind !== "node" && n.kind !== "table");
 
   const [now, setNow] = useState(0);
-  useEffect(() => setNow(Date.now()), []);
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const timer = setInterval(tick, 60000);
+    const initial = setTimeout(tick, 0);
+    window.addEventListener("focus", tick);
+    return () => { clearTimeout(initial); clearInterval(timer); window.removeEventListener("focus", tick); };
+  }, []);
   const [flipped, setFlipped] = useState(false);
   const [source, setSource] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -140,7 +147,9 @@ export default function Study({ userEmail }: { userEmail?: string }) {
 
   return (
     <div className="app study-app">
-      <AppBar current="estudio" userEmail={userEmail} />
+      <AppBar current="estudio" userEmail={userEmail}>
+        <SyncStatus stores={[notesStore, cardsStore]} cloud={cloud} />
+      </AppBar>
       <ViewTransition
       name="page"
       share={{ "nav-forward": "page-forward", "nav-back": "page-back", default: "page-fade" }}
@@ -184,7 +193,7 @@ export default function Study({ userEmail }: { userEmail?: string }) {
             ) : cards.length === 0 ? (
               <>
                 <p className="hand review-hand">aún no hay tarjetas ↘</p>
-                <p>Crea tarjetas desde una de tus notas aquí abajo, o con "IA ✦ → Crear tarjetas" en el Lienzo.</p>
+                <p>Crea tarjetas desde una de tus notas aquí abajo, o con &quot;IA ✦ → Crear tarjetas&quot; en el Lienzo.</p>
               </>
             ) : (
               <>

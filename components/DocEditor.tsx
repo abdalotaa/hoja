@@ -125,21 +125,12 @@ export default function DocEditor({ note, notes, onChange, onOpenNote, onCreateN
   const [popup, setPopup] = useState<Popup | null>(null);
   const notesRef = useRef(notes);
   const emitted = useRef(note.text);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useRef<(() => string) | null>(null);
   const cb = useRef({ onChange, onOpenNote, onCreateNote });
 
   useEffect(() => {
     notesRef.current = notes;
     cb.current = { onChange, onOpenNote, onCreateNote };
   });
-
-  const emit = () => {
-    if (!latest.current) return;
-    const md = latest.current().trim();
-    emitted.current = md;
-    cb.current.onChange(md);
-  };
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -156,6 +147,8 @@ export default function DocEditor({ note, notes, onChange, onOpenNote, onCreateN
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: "Escribe tus apuntes… usa [[ para enlazar otra nota" }),
       Markdown,
+      // These callbacks run in Tiptap interaction handlers, never during render.
+      // eslint-disable-next-line react-hooks/refs
       WikiSuggest.configure({
         getNotes: () => notesRef.current,
         selfId: note.id,
@@ -178,23 +171,11 @@ export default function DocEditor({ note, notes, onChange, onOpenNote, onCreateN
       },
     },
     onUpdate: ({ editor: ed }) => {
-      latest.current = () => ed.getMarkdown();
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(emit, 300);
+      const markdown = ed.getMarkdown().trim();
+      emitted.current = markdown;
+      cb.current.onChange(markdown);
     },
   });
-
-  // Save what is pending when the editor goes away (switching notes, closing the panel).
-  useEffect(
-    () => () => {
-      if (timer.current) {
-        clearTimeout(timer.current);
-        emit();
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
 
   // If the text changed from outside (an AI action), show it.
   useEffect(() => {

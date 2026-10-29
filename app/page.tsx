@@ -11,7 +11,7 @@ async function SignedIn() {
   await connection();
   const user = await getUser();
   if (!user) redirect("/login");
-  return <Canvas userEmail={user.email ?? "cuenta"} />;
+  return <Canvas userEmail={user.email ?? "cuenta"} userId={user.id} />;
 }
 
 export default function Home() {

@@ -20,6 +20,7 @@ npm run dev
 - **Dictado por voz** (Web Speech API del navegador) y **resúmenes** con IA.
 - **Plantillas:** Lean Canvas, validar una idea, pitch, semana de trabajo, repaso de examen, agenda de reunión.
 - **Pregúntale a tus notas:** respuestas con las notas fuente.
+- **Respaldos:** exporta notas, conexiones, tarjetas y eventos en JSON e impórtalos desde «Más → Importar respaldo». La importación agrega copias con nuevos identificadores y conserva las relaciones entre las notas; acepta también los respaldos anteriores de notas y conexiones.
 - **Exportar** a Markdown o JSON, y **compartir** un lienzo por enlace de solo lectura.
 - Transiciones entre secciones (View Transitions): la barra se queda quieta, la pestaña activa se desliza y la página entra por el lado hacia donde navegas; las ventanas "caen" sobre el lienzo. Se desactivan con "reducir movimiento".
 - Instalable como app (PWA) y cuentas con **correo y contraseña** (Supabase); recuperación de contraseña y enlace al correo como alternativa.
@@ -27,7 +28,9 @@ npm run dev
 ## Modos
 
 - **Local** (sin variables de Supabase): sin login, notas en `localStorage` de este navegador.
-- **Con cuenta** (con Supabase): login obligatorio, notas en la nube por usuario, y solo quien inició sesión puede usar el resumen con IA.
+- **Con cuenta** (con Supabase): login obligatorio, notas en la nube por usuario, y solo quien inició sesión puede usar el resumen con IA. Las ediciones y los borrados pendientes se conservan en este navegador por identificador de cuenta; se reintentan cada cinco segundos y al recuperar conexión. La barra muestra el estado de guardado. No borres los datos del navegador mientras haya cambios pendientes.
+
+El respaldo local permite conservar ediciones si falla la red; todavía no permite abrir la aplicación desde cero sin conexión, ni resuelve conflictos entre dispositivos.
 
 ## Configurar cuentas (Supabase)
 
@@ -54,6 +57,21 @@ El correo integrado de Supabase manda muy pocos mensajes por hora. Para no depen
 
 ## Siguiente
 
-1. Búsqueda por significado con embeddings (hoy "Preguntar" elige notas por palabras clave).
-2. Funcionamiento sin conexión.
-3. Planes de pago.
+1. Papelera y recuperación de notas borradas.
+2. Actualización de cambios entre dispositivos y resolución de conflictos.
+3. Límites de IA por minuto y día persistentes (hoy viven en memoria; la cuota mensual sí está en Supabase).
+4. Búsqueda por significado con embeddings (hoy "Preguntar" elige notas por palabras clave).
+5. Funcionamiento sin conexión.
+6. Planes de pago.
+
+
+## Verificación
+
+```bash
+npm test            # persistencia, reintentos, aislamiento de cuentas y respaldos
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+La verificación de cuota mensual de IA falla de forma cerrada: si Supabase no puede verificarla, no se llama a OpenAI. El esquema debe incluir `bump_ai_usage`.

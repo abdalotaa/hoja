@@ -12,7 +12,7 @@ async function SignedIn() {
   await connection();
   const user = await getUser();
   if (!user) redirect("/login");
-  return <Calendar userEmail={user.email ?? "cuenta"} />;
+  return <Calendar userEmail={user.email ?? "cuenta"} userId={user.id} />;
 }
 
 export default function CalendarPage() {
