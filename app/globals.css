@@ -409,3 +409,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cal-list li[data-done="true"] span { text-decoration: line-through; opacity: 0.55; }
 .cal-add { display: grid; gap: 8px; }
 .cal-hint { font-size: 13px; color: var(--muted) !important; }
+
+.login-tabs { display: flex; gap: 6px; margin-bottom: 4px; }
+.login-tabs button { padding: 7px 14px; border-radius: 999px; border: 2px solid transparent; font-size: 14px; font-weight: 700; background: transparent; }
+.login-tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--bg); }
+.login-tabs button:hover { background: var(--hover-bg); }
+.login-pass { display: flex; gap: 8px; align-items: center; width: 100%; }
+.login-pass .search { flex: 1; width: auto; }
+.login-alt { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.login-alt button { border: 0; background: transparent; padding: 4px 0; font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.login-alt button:hover { color: var(--ink); }
+.who-link { font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+@media (max-width: 820px) { .who-link { display: none; } }

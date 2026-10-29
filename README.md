@@ -19,7 +19,7 @@ npm run dev
 - **Plantillas:** Lean Canvas, validar una idea, pitch, semana de trabajo, repaso de examen, agenda de reunión.
 - **Pregúntale a tus notas:** respuestas con las notas fuente.
 - **Exportar** a Markdown o JSON, y **compartir** un lienzo por enlace de solo lectura.
-- Instalable como app (PWA) y cuentas con enlace al correo (Supabase).
+- Instalable como app (PWA) y cuentas con **correo y contraseña** (Supabase); recuperación de contraseña y enlace al correo como alternativa.
 
 ## Modos
 
@@ -36,7 +36,12 @@ npm run dev
 4. Project Settings → API: copia la URL y la *publishable key* a `.env.local` y a Vercel (ver `.env.example`).
 5. En Vercel, redeploy después de agregar las variables.
 
-El correo de Supabase tiene un límite bajo por hora; para uso real configura un SMTP propio en Authentication → SMTP Settings.
+### Contraseñas y límites de correo
+
+El correo integrado de Supabase manda muy pocos mensajes por hora. Para no depender de él:
+- Authentication → Providers → Email: desactiva **Confirm email** (así crear una cuenta no envía correo) y sube **Minimum password length** a 8.
+- Los correos solo quedan para recuperar la contraseña. Para uso real configura un SMTP propio en Authentication → SMTP Settings.
+- Quien ya entró con enlace puede poner contraseña desde "Contraseña" en la barra.
 
 ## IA y costos
 

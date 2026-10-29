@@ -32,6 +32,9 @@ export default function AppBar({ current, userEmail, children }: Props) {
           <span className="who" title={userEmail}>
             {userEmail}
           </span>
+          <Link href="/cambiar-contrasena" className="who-link">
+            Contraseña
+          </Link>
           <button className="btn line" type="submit">
             Salir
           </button>
