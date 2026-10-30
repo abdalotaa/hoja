@@ -27,7 +27,7 @@ Estado al 2026-10-29. Las tarjetas con casilla marcada ya están en `main` (o en
 
 | Pri | Tarjeta | Notas |
 |---|---|---|
-| P1 | Página pública y probar sin cuenta | Hoy el primer contacto es el login. Es lo que más falta antes de publicar los videos |
+| P1 | Probar Hoja sin cuenta | La página pública ya existe (`/` sin sesión y `/inicio`); falta poder probar la app antes de registrarse |
 | P1 | Probar el recorrido y la vista móvil en un teléfono real | Pellizco para zoom, teclado, Safari |
 | P2 | Etiquetas libres además de la etiqueta de color | |
 | P2 | Sugerencias de enlaces entre notas con IA | |
@@ -52,4 +52,5 @@ Estado al 2026-10-29. Las tarjetas con casilla marcada ya están en `main` (o en
 - [x] Dictado y reunión con grabación por trozos, reintentos y recuperación
 - [x] Cuentas con correo y contraseña; respaldos JSON
 - [x] Recorrido de bienvenida y vista móvil
-- [x] Libretas y nombre de cuenta (pendiente de SQL y prueba)
+- [x] Libretas y nombre de cuenta
+- [x] Landing público de Hoja (`/` sin sesión y `/inicio`), con registro directo (`/login?modo=registro`)

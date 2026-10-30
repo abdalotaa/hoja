@@ -34,8 +34,8 @@ function explain(error: { status?: number; code?: string; message?: string }): s
   return "No se pudo completar. Revisa tus datos e inténtalo de nuevo.";
 }
 
-export default function LoginForm({ linkError }: { linkError: boolean }) {
-  const [mode, setMode] = useState<Mode>("signin");
+export default function LoginForm({ linkError, start = "signin" }: { linkError: boolean; start?: Mode }) {
+  const [mode, setMode] = useState<Mode>(start);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);

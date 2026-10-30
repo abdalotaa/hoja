@@ -8,8 +8,8 @@ import { getUser } from "@/lib/supabase/server";
 async function Login({ searchParams }: Pick<PageProps<"/login">, "searchParams">) {
   await connection();
   if (await getUser()) redirect("/");
-  const { error } = await searchParams;
-  return <LoginForm linkError={error === "link"} />;
+  const { error, modo } = await searchParams;
+  return <LoginForm linkError={error === "link"} start={modo === "registro" ? "signup" : "signin"} />;
 }
 
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
