@@ -904,3 +904,10 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .live-line { margin: 0; font-size: 16px; line-height: 1.4; }
 .live-line b { margin-right: 4px; }
 .live-line.remote b { color: var(--accent); }
+
+.meet-live .meters { padding-bottom: 6px; }
+.live-jot { display: grid; gap: 4px; padding: 0 18px 16px; font-size: 12px; font-weight: 700; }
+.live-jot textarea {
+  font: inherit; font-size: 15px; font-weight: 400; line-height: 1.4; padding: 8px 10px; resize: vertical;
+  border: 2px solid var(--ink); border-radius: 10px; background: var(--paper); color: var(--ink);
+}

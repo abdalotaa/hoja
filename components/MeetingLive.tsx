@@ -13,6 +13,9 @@ interface Props {
   status: Record<Source, Status>;
   remote: boolean;
   error: string | null;
+  /** Own notes box; shown only when given (meetings, not quick dictation). */
+  jot?: string;
+  onJot?: (value: string) => void;
 }
 
 const LABEL: Record<Source, string> = { mic: "Tú", remote: "Participantes" };
@@ -37,7 +40,7 @@ function Meter({ src, level, status }: { src: Source; level: number; status: Sta
 }
 
 /** What is being heard right now: text as it arrives, who said it, and whether each source is alive. */
-export default function MeetingLive({ title, elapsed, lines, partial, levels, status, remote, error }: Props) {
+export default function MeetingLive({ title, elapsed, lines, partial, levels, status, remote, error, jot, onJot }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const live = [partial.mic, partial.remote].filter(Boolean).join(" ");
 
@@ -69,6 +72,18 @@ export default function MeetingLive({ title, elapsed, lines, partial, levels, st
         {live && <p className="live-line live-interim">{live}</p>}
         {error && <p className="live-interim">{error}</p>}
       </div>
+      {onJot && (
+        <label className="live-jot">
+          <span>Mis apuntes (se guardan en la nota)</span>
+          <textarea
+            rows={3}
+            maxLength={5000}
+            placeholder="Escribe aquí lo que quieras añadir: ideas, pendientes, recordatorios…"
+            value={jot ?? ""}
+            onChange={(e) => onJot(e.target.value)}
+          />
+        </label>
+      )}
     </aside>
   );
 }

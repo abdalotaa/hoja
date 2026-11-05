@@ -108,3 +108,12 @@ describe("vocabulary", () => {
     expect(prompt).toMatch(/hola$/);
   });
 });
+
+describe("own notes", () => {
+  it("goes before the transcript of a summarized meeting", async () => {
+    const { withJot } = await import("../lib/meeting");
+    expect(withJot("Resumen\n\n## Original\nAna: hola", "Llamar a Marta")).toBe("Resumen\n\n## Mis apuntes\nLlamar a Marta\n\n## Original\nAna: hola");
+    expect(withJot("Ana: hola", " Llamar ")).toBe("## Mis apuntes\nLlamar\n\nAna: hola");
+    expect(withJot("Ana: hola", "  ")).toBe("Ana: hola");
+  });
+});

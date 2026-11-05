@@ -121,4 +121,13 @@ export function fileSpeaker(filename: string, index: number): string {
   return `f:${base || `Participante ${index + 1}`}`;
 }
 
+/** The person's own notes typed during the meeting, placed before the transcript ("## Original") or, without one, before the text. */
+export function withJot(text: string, jot: string, mark = "## Original\n"): string {
+  const mine = jot.trim();
+  if (!mine) return text;
+  const section = `## Mis apuntes\n${mine}\n\n`;
+  const i = text.lastIndexOf(mark);
+  return i === -1 ? `${section}${text}` : `${text.slice(0, i)}${section}${text.slice(i)}`;
+}
+
 export const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;

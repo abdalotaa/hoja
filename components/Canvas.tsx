@@ -30,7 +30,7 @@ import { useMeeting } from "@/lib/useMeeting";
 import { diarizeWindows } from "@/lib/diarize";
 import { importRecordings } from "@/lib/import-audio";
 import { discardMeeting, recoverMeeting } from "@/lib/meeting-io";
-import { dropEchoes, MIC, renderTranscript, sortLines, type MeetingLine } from "@/lib/meeting";
+import { dropEchoes, MIC, renderTranscript, sortLines, withJot, type MeetingLine } from "@/lib/meeting";
 import { loadGlossary } from "@/lib/glossary";
 import { polishTranscript } from "@/lib/polish";
 import { summarizeMeeting } from "@/lib/meeting-summary";
@@ -89,6 +89,9 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const listening = live ? meet.recording : server ? rec.recording : speech.listening;
   const canDictate = live || server || speech.supported;
   const [startOpen, setStartOpen] = useState(false);
+  // The person's own notes typed while a meeting is recording; they join the note when it is saved.
+  const [jot, setJot] = useState("");
+  const jotRef = useRef("");
   const [working, setWorking] = useState<string | null>(null);
   const [finish, setFinish] = useState<{ lines: MeetingLine[]; as: "note" | "meeting"; meta: SessionMeta | null; detected: boolean } | null>(null);
   const [savingFinish, setSavingFinish] = useState(false);
@@ -624,10 +627,10 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
 
   /** Turns a finished transcript into a note and, for meetings, extracts decisions and tasks. */
   const saveTranscript = useCallback(
-    (transcript: string, as: "note" | "meeting") => {
+    (transcript: string, as: "note" | "meeting", jot = "") => {
       const note = tag(newNote(notes.length, ++topZ.current, viewportSpot()));
       note.title = as === "meeting" ? "Reunión" : "Nota de voz";
-      note.text = transcript;
+      note.text = withJot(transcript, jot);
       setNotes((all) => [...all, note]);
       setActiveId(note.id);
       if (transcript.length < 20) return;
@@ -639,9 +642,9 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
         setBusyFor(note.id, "summarize");
         try {
           const today = new Date().toLocaleDateString("en-CA");
-          const result = await summarizeMeeting(transcript, today, (i, n) => setNotice(`Resumiendo la reunión, parte ${i} de ${n}…`));
+          const result = await summarizeMeeting(jot.trim() ? `Apuntes de quien grabó:\n${jot.trim()}\n\n---\n\n${transcript}` : transcript, today, (i, n) => setNotice(`Resumiendo la reunión, parte ${i} de ${n}…`));
           setNotes((all) =>
-            all.map((n) => (n.id === note.id ? { ...n, title: result.title, text: formatMeeting(result, transcript), updatedAt: Date.now() } : n)),
+            all.map((n) => (n.id === note.id ? { ...n, title: result.title, text: withJot(formatMeeting(result, transcript), jot), updatedAt: Date.now() } : n)),
           );
           const dated = result.actions.filter((a) => a.due).length;
           setNotice(
@@ -674,8 +677,10 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
           text = (await polishTranscript(text, loadGlossary())).text;
           setStopping(false);
         }
-        saveTranscript(text, as);
+        saveTranscript(text, as, as === "meeting" ? jotRef.current : "");
       }
+      jotRef.current = "";
+      setJot("");
       if (meta) await discardMeeting(meta);
       setFinish(null);
       await refreshOrphans();
@@ -1103,6 +1108,11 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
             status={meet.status}
             remote={meet.remoteOn}
             error={meet.error}
+            jot={mode === "meeting" ? jot : undefined}
+            onJot={(v) => {
+              jotRef.current = v;
+              setJot(v);
+            }}
           />
         )}
         {startOpen && !listening && !stopping && (

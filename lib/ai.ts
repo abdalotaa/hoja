@@ -53,7 +53,7 @@ export async function ai<K extends keyof Tasks>(task: K, input: Tasks[K]["in"]):
 }
 
 const LEGACY_MARK = "— Original —\n";
-const MARK = "## Original\n";
+export const MARK = "## Original\n";
 
 /** If the note was already summarized, returns only its original text so a second run doesn't summarize the summary. */
 export function extractOriginal(text: string): string {

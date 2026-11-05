@@ -112,7 +112,8 @@ export const TASKS: Record<string, TaskSpec> = {
       "('esta semana', 'pronto', 'luego', 'sin fecha fija'), due es null: no la inventes. Si las líneas de la transcripción " +
       "empiezan con el nombre de quien habló ('Marta: …'), úsalo como responsable cuando esa persona asume o se le asigna " +
       "algo, y atribuye las decisiones a quien las dijo; un nombre genérico como 'Hablante A' o 'Participantes' no es un " +
-      "responsable: déjalo en null.",
+      "responsable: déjalo en null. Si el texto empieza con 'Apuntes de quien grabó', son notas personales de quien " +
+      "grabó, no parte de la conversación: úsalas para entender mejor el contexto y los pendientes.",
     schemaName: "meeting_notes",
     maxTokens: 1800,
     schema: obj({
