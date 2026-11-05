@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cleanName, MAX_NAME } from "@/lib/profile";
 import { getBrowserClient } from "@/lib/supabase/client";
 
-export default function AccountForm({ email, name: initial }: { email: string; name: string }) {
+export default function AccountForm({ email, name: initial, admin = false }: { email: string; name: string; admin?: boolean }) {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -67,6 +67,12 @@ export default function AccountForm({ email, name: initial }: { email: string; n
           </form>
           <p>
             <Link href="/cambiar-contrasena">Cambiar contraseña</Link> · <Link href="/">Volver a mis notas</Link>
+            {admin && (
+              <>
+                {" "}
+                · <Link href="/admin">Panel de administración</Link>
+              </>
+            )}
           </p>
         </div>
       </section>

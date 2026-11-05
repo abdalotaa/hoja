@@ -152,3 +152,168 @@ as $$
   select s.title, s.snapshot from public.shares s where s.token = share_token;
 $$;
 grant execute on function public.get_share(text) to anon, authenticated;
+
+-- ───────── super admin: who can open /admin ─────────
+-- No policies on purpose: nobody reads this table from the app. Add yourself once, in the SQL Editor:
+--   insert into public.admins (user_id) select id from auth.users where email = 'tu@correo.com' on conflict do nothing;
+create table if not exists public.admins (
+  user_id  uuid primary key references auth.users (id) on delete cascade
+);
+alter table public.admins enable row level security;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+revoke all on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+
+-- ───────── suggestions sent from inside the app ─────────
+create table if not exists public.suggestions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  kind        text not null check (kind in ('idea', 'problema', 'otro')),
+  message     text not null check (char_length(message) between 3 and 2000),
+  status      text not null default 'nueva' check (status in ('nueva', 'vista', 'hecha')),
+  created_at  timestamptz not null default now()
+);
+create index if not exists suggestions_created_idx on public.suggestions (created_at desc);
+alter table public.suggestions enable row level security;
+drop policy if exists "suggestions_select_own" on public.suggestions;
+create policy "suggestions_select_own" on public.suggestions for select using (auth.uid() = user_id);
+
+-- Sends one suggestion as the signed-in person: at most 10 per day. Returns false when refused.
+create or replace function public.send_suggestion(p_kind text, p_message text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    return false;
+  end if;
+  if (select count(*) from public.suggestions where user_id = uid and created_at > now() - interval '1 day') >= 10 then
+    return false;
+  end if;
+  insert into public.suggestions (user_id, kind, message) values (uid, p_kind, left(trim(p_message), 2000));
+  return true;
+end;
+$$;
+revoke all on function public.send_suggestion(text, text) from public, anon;
+grant execute on function public.send_suggestion(text, text) to authenticated;
+
+-- Admin only: every suggestion with the sender's email.
+create or replace function public.admin_suggestions(max_rows integer default 100)
+returns table (id uuid, kind text, message text, status text, created_at timestamptz, email text)
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return query
+    select s.id, s.kind, s.message, s.status, s.created_at, u.email::text
+    from public.suggestions s join auth.users u on u.id = s.user_id
+    order by s.created_at desc
+    limit least(max_rows, 500);
+end;
+$$;
+revoke all on function public.admin_suggestions(integer) from public, anon;
+grant execute on function public.admin_suggestions(integer) to authenticated;
+
+create or replace function public.admin_set_suggestion_status(p_id uuid, p_status text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  update public.suggestions set status = p_status where id = p_id;
+end;
+$$;
+revoke all on function public.admin_set_suggestion_status(uuid, text) from public, anon;
+grant execute on function public.admin_set_suggestion_status(uuid, text) to authenticated;
+
+-- Admin only: the numbers behind /admin, as one JSON object. Counts only: no note contents are read.
+create or replace function public.admin_metrics()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  tz text := 'America/Mexico_City';
+  week_ms bigint := (extract(epoch from now() - interval '7 days') * 1000)::bigint;
+  this_month text := to_char(now(), 'YYYY-MM');
+begin
+  if not public.is_admin() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'users', jsonb_build_object(
+      'total', (select count(*) from auth.users),
+      'last7', (select count(*) from auth.users where created_at > now() - interval '7 days'),
+      'last30', (select count(*) from auth.users where created_at > now() - interval '30 days'),
+      'withNotes', (select count(distinct user_id) from public.notes),
+      'active7', (select count(distinct user_id) from public.notes where updated_at > week_ms)
+    ),
+    'content', jsonb_build_object(
+      'notes', (select count(*) from public.notes where kind = 'note'),
+      'tables', (select count(*) from public.notes where kind = 'table'),
+      'nodes', (select count(*) from public.notes where kind = 'node'),
+      'notebooks', (select count(*) from public.notebooks),
+      'links', (select count(*) from public.links),
+      'cards', (select count(*) from public.cards),
+      'events', (select count(*) from public.events),
+      'shares', (select count(*) from public.shares)
+    ),
+    'ai', jsonb_build_object(
+      'uses', (select coalesce(sum(a.count), 0) from public.ai_usage a where a.month = this_month),
+      'people', (select count(*) from public.ai_usage a where a.month = this_month and a.count > 0)
+    ),
+    'daily', (
+      select coalesce(jsonb_agg(jsonb_build_object('day', d::date, 'count', coalesce(c.n, 0)) order by d), '[]'::jsonb)
+      from generate_series((now() at time zone tz)::date - 29, (now() at time zone tz)::date, interval '1 day') d
+      left join (
+        select (created_at at time zone tz)::date as day, count(*) as n from auth.users group by 1
+      ) c on c.day = d::date
+    ),
+    'campaigns', (
+      select coalesce(jsonb_agg(jsonb_build_object('name', t.name, 'count', t.n) order by t.n desc), '[]'::jsonb)
+      from (
+        select coalesce(nullif(raw_user_meta_data->>'utm_campaign', ''), 'sin campaña') as name, count(*) as n
+        from auth.users group by 1
+      ) t
+    ),
+    'sources', (
+      select coalesce(jsonb_agg(jsonb_build_object('name', t.name, 'count', t.n) order by t.n desc), '[]'::jsonb)
+      from (
+        select coalesce(nullif(raw_user_meta_data->>'utm_source', ''), 'sin fuente') as name, count(*) as n
+        from auth.users group by 1
+      ) t
+    ),
+    'suggestions', jsonb_build_object(
+      'nueva', (select count(*) from public.suggestions where status = 'nueva'),
+      'vista', (select count(*) from public.suggestions where status = 'vista'),
+      'hecha', (select count(*) from public.suggestions where status = 'hecha')
+    )
+  );
+end;
+$$;
+revoke all on function public.admin_metrics() from public, anon;
+grant execute on function public.admin_metrics() to authenticated;

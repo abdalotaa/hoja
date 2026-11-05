@@ -49,6 +49,18 @@ El correo integrado de Supabase manda muy pocos mensajes por hora. Para no depen
 - Los correos solo quedan para recuperar la contraseña. Para uso real configura un SMTP propio en Authentication → SMTP Settings.
 - Quien ya entró con enlace puede poner contraseña desde "Contraseña" en la barra.
 
+## Sugerencias y panel de super admin
+
+- **Sugerencias:** con cuenta, «Más → Sugerencias» abre un cuadro para mandar una idea, un problema u otra cosa (máximo 10 al día por persona).
+- **Panel:** `/admin` muestra cuentas, nuevas y activas, activación, registros por día, de qué campaña (`utm_campaign`) y fuente vienen, lo que se crea, usos de IA del mes y las sugerencias con su estado. Solo cuenta números: no lee el contenido de las notas.
+- **Quién es admin:** lo decide la base de datos (tabla `admins`), no una variable de entorno. Después de ejecutar `supabase/schema.sql`, agrégate una vez en el SQL Editor:
+
+```sql
+insert into public.admins (user_id) select id from auth.users where email = 'tu@correo.com' on conflict do nothing;
+```
+
+Quien no es admin ve un 404 en `/admin`. Con tu cuenta, «Mi cuenta» muestra el enlace al panel.
+
 ## IA y costos
 
 - Todas las funciones de IA pasan por `/api/ai` (OpenAI, modelo en `OPENAI_MODEL`). Solo con sesión iniciada.

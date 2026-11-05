@@ -9,6 +9,7 @@ import Tour from "./Tour";
 import InstallTip from "./InstallTip";
 import Notebooks from "./Notebooks";
 import AskDialog from "./AskDialog";
+import SuggestionDialog from "./SuggestionDialog";
 import LinksLayer from "./LinksLayer";
 import Menu from "./Menu";
 import NoteWindow, { type NoteAction } from "./NoteWindow";
@@ -67,6 +68,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const [busy, setBusy] = useState<Map<string, NoteAction>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<"note" | "meeting">("note");
   const [zoom, setZoom] = useState(1);
@@ -987,7 +989,12 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
             { label: "Exportar a Markdown", hint: "Un archivo con todas tus notas", onSelect: () => exportMarkdown(allNotes, links), disabled: allNotes.length === 0 },
             { label: "Respaldo completo (JSON)", hint: "Notas, conexiones, tarjetas y eventos", onSelect: () => exportJson(allNotes, links, cardsStore.items, eventsStore.items, notebooks), disabled: !ready },
             { label: "Importar respaldo (JSON)", hint: "Agrega una copia sin reemplazar tus datos", onSelect: () => importRef.current?.click(), disabled: !ready },
-            ...(cloud ? [{ label: "Mi cuenta", hint: userName || userEmail, onSelect: () => router.push("/cuenta") }] : []),
+            ...(cloud
+              ? [
+                  { label: "Mi cuenta", hint: userName || userEmail, onSelect: () => router.push("/cuenta") },
+                  { label: "Sugerencias", hint: "Cuéntanos qué mejorar", onSelect: () => setSuggesting(true) },
+                ]
+              : []),
             { label: "Agregar a la pantalla de inicio", hint: "Ábrela como una app", onSelect: () => setInstalling(true) },
             { label: "Ver el recorrido", hint: "Una vuelta rápida por Hoja", onSelect: () => setTouring(true) },
             ...(cloud
@@ -1238,6 +1245,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
           />
         )}
         {asking && <AskDialog notes={allNotes} onOpenNote={openNote} onClose={() => setAsking(false)} />}
+        {suggesting && <SuggestionDialog onClose={() => setSuggesting(false)} />}
         {ready && notes.length === 0 && !listening && (
           <div className="empty">
             <h1>Hoja</h1>
