@@ -121,12 +121,61 @@ function audioOverLimit(request: Request, userId?: string): boolean {
 export type AudioGuardResult = { ok: true } | { ok: false; status: number; error: string };
 
 /** Same-origin multipart uploads with a bounded size and per-person rate limits, before any paid call. */
-export function guardAudioRequest(request: Request, userId?: string): AudioGuardResult {
+export function guardAudioRequest(request: Request, userId?: string, maxBytes = MAX_AUDIO_BYTES): AudioGuardResult {
   if (!isFromApp(request, "multipart/form-data")) return { ok: false, status: 403, error: "Solicitud no permitida." };
   const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > MAX_AUDIO_BYTES) return { ok: false, status: 413, error: "El audio es demasiado largo." };
+  if (length > maxBytes) return { ok: false, status: 413, error: "El audio es demasiado largo." };
   if (audioOverLimit(request, userId)) {
     return { ok: false, status: 429, error: "Demasiados audios seguidos. Intenta en un momento." };
   }
   return { ok: true };
+}
+
+/** Short-lived keys for live transcription: a handful per minute is plenty, since each one lasts a whole meeting. */
+const TOKEN_PER_MINUTE = 6;
+const TOKEN_PER_DAY = 80;
+const TOKEN_GLOBAL_PER_DAY = 1000;
+const tokenHits = new Map<string, number[]>();
+let tokenGlobal: number[] = [];
+
+function tokenOverLimit(request: Request, userId?: string): boolean {
+  const now = Date.now();
+  const key = userId ? `user:${userId}` : clientIp(request);
+
+  tokenGlobal = tokenGlobal.filter((t) => now - t < DAY);
+  if (tokenGlobal.length >= TOKEN_GLOBAL_PER_DAY) return true;
+
+  const recent = (tokenHits.get(key) ?? []).filter((t) => now - t < DAY);
+  const lastMinute = recent.filter((t) => now - t < 60_000).length;
+  if (recent.length >= TOKEN_PER_DAY || lastMinute >= TOKEN_PER_MINUTE) {
+    tokenHits.set(key, recent);
+    return true;
+  }
+
+  recent.push(now);
+  tokenHits.set(key, recent);
+  tokenGlobal.push(now);
+
+  if (tokenHits.size > 5000) {
+    for (const [k, times] of tokenHits) if (!times.some((t) => now - t < DAY)) tokenHits.delete(k);
+  }
+  return false;
+}
+
+/** Same-origin JSON request with a tiny body and its own rate limit, before a live-transcription key is minted. */
+export async function guardTokenRequest(request: Request, userId?: string): Promise<GuardResult> {
+  if (!isFromApp(request)) return { ok: false, status: 403, error: "Solicitud no permitida." };
+  if (Number(request.headers.get("content-length") ?? 0) > 2_000) return { ok: false, status: 413, error: "Solicitud demasiado grande." };
+  if (tokenOverLimit(request, userId)) {
+    return { ok: false, status: 429, error: "Demasiados intentos de conectar. Intenta en un momento." };
+  }
+  const raw = await request.text();
+  if (raw.length > 2_000) return { ok: false, status: 413, error: "Solicitud demasiado grande." };
+  try {
+    const body: unknown = raw ? JSON.parse(raw) : {};
+    if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error("shape");
+    return { ok: true, body: body as Record<string, unknown> };
+  } catch {
+    return { ok: false, status: 400, error: "Solicitud inválida." };
+  }
 }

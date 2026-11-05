@@ -24,7 +24,18 @@ import { CARDS, EVENTS, LINKS, NOTEBOOKS, NOTES, type Card, type Notebook } from
 import { newNote, type Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
 import { useSpeech } from "@/lib/useSpeech";
-import { deleteSession, listSessions, transcribeStored, useRecorder, type SessionMeta } from "@/lib/useRecorder";
+import { deleteSession, listSessions, useRecorder } from "@/lib/useRecorder";
+import type { SessionMeta } from "@/lib/audio-store";
+import { useMeeting } from "@/lib/useMeeting";
+import { diarizeWindows } from "@/lib/diarize";
+import { importRecordings } from "@/lib/import-audio";
+import { discardMeeting, recoverMeeting } from "@/lib/meeting-io";
+import { dropEchoes, MIC, renderTranscript, sortLines, type MeetingLine } from "@/lib/meeting";
+import { loadGlossary } from "@/lib/glossary";
+import { polishTranscript } from "@/lib/polish";
+import MeetingStart from "./MeetingStart";
+import MeetingLive from "./MeetingLive";
+import MeetingFinish from "./MeetingFinish";
 import { useSynced } from "@/lib/useSynced";
 import { inView, useNotebookView } from "@/lib/useNotebookView";
 import { backlinksOf, derivedLinks } from "@/lib/wiki";
@@ -70,9 +81,16 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const speech = useSpeech("es-MX");
   // Recording + server transcription when the browser can record; the browser's own dictation is the fallback.
   const rec = useRecorder();
+  const meet = useMeeting();
+  // Live transcription (and the call's audio) when the browser allows it; otherwise chunked recording, then browser dictation.
+  const live = meet.supported;
   const server = rec.supported;
-  const listening = server ? rec.recording : speech.listening;
-  const canDictate = server || speech.supported;
+  const listening = live ? meet.recording : server ? rec.recording : speech.listening;
+  const canDictate = live || server || speech.supported;
+  const [startOpen, setStartOpen] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
+  const [finish, setFinish] = useState<{ lines: MeetingLine[]; as: "note" | "meeting"; meta: SessionMeta | null; detected: boolean } | null>(null);
+  const [savingFinish, setSavingFinish] = useState(false);
   const [touring, setTouring] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -81,7 +99,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const savedPartial = useRef("");
 
   useEffect(() => {
-    void listSessions().then(setOrphans);
+    void listSessions().then((all) => setOrphans(all.filter((s) => s.mode !== "remote")));
   }, []);
 
   useEffect(() => {
@@ -640,8 +658,122 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
     [notes.length, runSummary, setNotes, viewportSpot, setBusyFor, tag],
   );
 
+  const refreshOrphans = useCallback(async () => setOrphans((await listSessions()).filter((x) => x.mode !== "remote")), []);
+
+  /** Saves the final transcript as a note and removes the audio kept in this browser. */
+  const saveFinal = useCallback(
+    async (lines: MeetingLine[], as: "note" | "meeting", meta: SessionMeta | null, names: Record<string, string>, polish: boolean) => {
+      let text = renderTranscript(lines, names);
+      if (!text.trim()) {
+        setNotice("No se escuchó nada. Intenta de nuevo.");
+      } else {
+        if (polish) {
+          setStopping(true);
+          setWorking("Corrigiendo ortografía…");
+          text = (await polishTranscript(text, loadGlossary())).text;
+          setStopping(false);
+        }
+        saveTranscript(text, as);
+      }
+      if (meta) await discardMeeting(meta);
+      setFinish(null);
+      await refreshOrphans();
+    },
+    [saveTranscript, refreshOrphans],
+  );
+
+  /** Several voices get a naming step first; a lone microphone is saved straight away. */
+  const conclude = useCallback(
+    async (all: MeetingLine[], as: "note" | "meeting", meta: SessionMeta | null, detected: boolean) => {
+      const lines = dropEchoes(sortLines(all));
+      if (as === "meeting" && lines.some((l) => l.speaker !== MIC)) {
+        setFinish({ lines, as, meta, detected });
+        return;
+      }
+      await saveFinal(lines, as, meta, {}, true);
+    },
+    [saveFinal],
+  );
+
+  const stopLive = useCallback(
+    async (as: "note" | "meeting") => {
+      setStopping(true);
+      setWorking("Terminando de transcribir…");
+      const f = await meet.stop();
+      const meta: SessionMeta = { id: f.id, mode: as, startedAt: f.origin };
+      let lines = f.lines;
+      let detected = false;
+      const progress = (done: number, total: number) => setWorking(`Identificando quién habló… ${Math.min(done + 1, total)}/${total}`);
+
+      if (f.incomplete) {
+        // A live connection gave up: rebuild everything from the audio saved here.
+        setWorking("Completando desde el audio guardado…");
+        const r = await recoverMeeting(meta, progress);
+        if (r.failed > 0) {
+          setStopping(false);
+          setNotice(`${r.error ?? "No se pudo transcribir todo."} El audio quedó guardado: usa «Recuperar» para reintentar.`);
+          await refreshOrphans();
+          return;
+        }
+        lines = r.lines;
+        detected = f.windows.length > 0;
+      } else if (f.windows.length > 0) {
+        setWorking("Identificando quién habló…");
+        const d = await diarizeWindows(f.windows, f.origin, progress);
+        if (d.lines.length > 0) {
+          lines = [...lines.filter((l) => l.src === "mic"), ...d.lines];
+          detected = true;
+        }
+        if (d.failed > 0) setNotice("No pude separar bien las voces: lo que dijeron los demás quedó junto, como «Participantes».");
+      }
+      setStopping(false);
+      await conclude(lines, as, meta, detected);
+    },
+    [meet, conclude, refreshOrphans],
+  );
+
+  const startMeeting = useCallback(
+    async (o: { remote: boolean; glossary: string }) => {
+      setStartOpen(false);
+      setMode("meeting");
+      await meet.start({ mode: "meeting", remote: o.remote, glossary: o.glossary });
+    },
+    [meet],
+  );
+
+  const importFiles = useCallback(
+    async (files: File[]) => {
+      setStartOpen(false);
+      setMode("meeting");
+      setStopping(true);
+      setWorking("Preparando el audio…");
+      const r = await importRecordings(files, (p) =>
+        setWorking(`Transcribiendo${p.files > 1 ? ` archivo ${p.file + 1} de ${p.files},` : ""} parte ${p.done + 1} de ${p.total}…`),
+      );
+      setStopping(false);
+      if (r.lines.length === 0) {
+        setNotice(r.error ?? "No se pudo transcribir el audio.");
+        return;
+      }
+      if (r.failed > 0) setNotice(`${r.error ?? "Algunas partes no se pudieron transcribir."} Revisa que el texto esté completo.`);
+      await conclude(r.lines, "meeting", null, files.length === 1);
+    },
+    [conclude],
+  );
+
   const toggleDictation = useCallback(
     async (as: "note" | "meeting") => {
+      if (live) {
+        if (stopping) return;
+        if (!meet.recording) {
+          setMode(as);
+          if (as === "meeting") setStartOpen((open) => !open);
+          else await meet.start({ mode: "note", remote: false, glossary: loadGlossary() });
+          return;
+        }
+        await stopLive(as);
+        return;
+      }
       if (server) {
         if (stopping) return;
         if (!rec.recording) {
@@ -655,7 +787,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
         if (r.failed > 0) {
           // Keep the audio: the note is created once it is complete, from «Recuperar».
           setNotice(`${r.error ?? "No se pudo transcribir todo."} El audio quedó guardado: usa «Recuperar» para reintentar.`);
-          setOrphans(await listSessions());
+          await refreshOrphans();
           return;
         }
         if (r.text) saveTranscript(r.text, as);
@@ -675,7 +807,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
       savedPartial.current = transcript;
       saveTranscript(transcript, as);
     },
-    [server, stopping, rec, speech, saveTranscript],
+    [live, server, stopping, meet, rec, speech, saveTranscript, stopLive, refreshOrphans],
   );
 
   // Browser dictation can fail mid-session (network, service). Keep what was heard instead of dropping it.
@@ -691,23 +823,25 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const recover = useCallback(
     async (meta: SessionMeta) => {
       setRecovering(true);
-      const r = await transcribeStored(meta.id);
+      const r = await recoverMeeting(meta);
       setRecovering(false);
       if (r.failed > 0) {
         setNotice(`${r.error ?? "No se pudo transcribir."} El audio sigue guardado; intenta de nuevo en un momento.`);
         return;
       }
-      if (r.text) saveTranscript(r.text, meta.mode);
-      await deleteSession(meta.id);
-      setOrphans(await listSessions());
+      const hasVoices = r.lines.some((l) => l.src === "remote");
+      await conclude(r.lines, meta.mode === "note" ? "note" : "meeting", meta, hasVoices);
     },
-    [saveTranscript],
+    [conclude],
   );
 
-  const discardRecording = useCallback(async (id: string) => {
-    await deleteSession(id);
-    setOrphans(await listSessions());
-  }, []);
+  const discardRecording = useCallback(
+    async (meta: SessionMeta) => {
+      await discardMeeting(meta);
+      await refreshOrphans();
+    },
+    [refreshOrphans],
+  );
 
   const applyTemplate = useCallback(
     (id: string) => {
@@ -958,7 +1092,38 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
         </div>
         </div>
         </div>
-        {(listening || stopping || speech.error || rec.error || notice) && (
+        {live && meet.recording && (
+          <MeetingLive
+            title={mode === "meeting" ? "escuchando la reunión" : "escuchando"}
+            elapsed={meet.elapsed}
+            lines={meet.lines}
+            partial={meet.partial}
+            levels={meet.levels}
+            status={meet.status}
+            remote={meet.remoteOn}
+            error={meet.error}
+          />
+        )}
+        {startOpen && !listening && !stopping && (
+          <MeetingStart
+            onStart={(o) => void startMeeting(o)}
+            onImport={(files) => void importFiles(files)}
+            onClose={() => setStartOpen(false)}
+          />
+        )}
+        {finish && !stopping && (
+          <MeetingFinish
+            lines={finish.lines}
+            detected={finish.detected}
+            busy={savingFinish}
+            onSave={async (names, polish) => {
+              setSavingFinish(true);
+              await saveFinal(finish.lines, finish.as, finish.meta, names, polish);
+              setSavingFinish(false);
+            }}
+          />
+        )}
+        {!(live && meet.recording) && !startOpen && !finish && (listening || stopping || speech.error || rec.error || meet.error || notice) && (
           <aside className="live ds-win" role="status" aria-live="polite">
             <div className="note-bar" style={{ cursor: "default" }}>
               <i className="dot close" aria-hidden="true" />
@@ -966,7 +1131,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
               <i className="dot" aria-hidden="true" />
               <span className="note-label mono">
                 {listening
-                  ? `${mode === "meeting" ? "escuchando la reunión" : "escuchando"}${server ? ` · ${Math.floor(rec.elapsed / 60)}:${String(rec.elapsed % 60).padStart(2, "0")}` : ""}`
+                  ? `${mode === "meeting" ? "escuchando la reunión" : "escuchando"}${server && !live ? ` · ${Math.floor(rec.elapsed / 60)}:${String(rec.elapsed % 60).padStart(2, "0")}` : ""}`
                   : stopping
                     ? "transcribiendo"
                     : "aviso"}
@@ -987,14 +1152,14 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
                   </>
                 )
               ) : stopping ? (
-                "Terminando de transcribir…"
+                (working ?? "Terminando de transcribir…")
               ) : (
-                (rec.error ?? speech.error ?? notice)
+                (meet.error ?? rec.error ?? speech.error ?? notice)
               )}
             </p>
           </aside>
         )}
-        {orphans.length > 0 && !listening && !stopping && !speech.error && !rec.error && !notice && (
+        {orphans.length > 0 && !listening && !stopping && !startOpen && !finish && !speech.error && !rec.error && !meet.error && !notice && (
           <aside className="live ds-win" role="status" aria-live="polite">
             <div className="note-bar" style={{ cursor: "default" }}>
               <i className="dot close" aria-hidden="true" />
@@ -1012,7 +1177,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
                 <button className="btn line" onClick={() => void recover(orphans[0])}>
                   Recuperar
                 </button>{" "}
-                <button className="btn line" onClick={() => void discardRecording(orphans[0].id)}>
+                <button className="btn line" onClick={() => void discardRecording(orphans[0])}>
                   Descartar
                 </button>
               </p>

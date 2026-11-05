@@ -4,8 +4,11 @@ const DB_NAME = "hoja-audio";
 
 export interface SessionMeta {
   id: string;
-  mode: "note" | "meeting";
+  /** "remote" is the participants' side of a meeting: one continuous recording per window, never shown on its own. */
+  mode: "note" | "meeting" | "remote";
   startedAt: number;
+  /** For "remote": when the meeting it belongs to started, which is also its microphone session's startedAt. */
+  origin?: number;
 }
 export interface StoredChunk {
   session: string;

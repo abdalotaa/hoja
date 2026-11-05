@@ -41,26 +41,34 @@ async function sendWithRetries(blob: Blob, mime: string, context: string): Promi
 }
 
 /** Transcribes every saved chunk of a session that doesn't have text yet. Used to recover an interrupted recording. */
-export async function transcribeStored(id: string): Promise<{ text: string; failed: number; error?: string }> {
+export async function transcribeChunks(id: string): Promise<{ parts: { seq: number; text: string }[]; failed: number; error?: string }> {
   const chunks = await getChunks(id);
   let failed = 0;
   let error: string | undefined;
   const texts: string[] = [];
+  const parts: { seq: number; text: string }[] = [];
   for (const c of chunks) {
     if (c.text !== undefined) {
       texts.push(c.text);
+      parts.push({ seq: c.seq, text: c.text });
       continue;
     }
     const sent = await sendWithRetries(c.blob, c.mime, tail(joinParts(texts)));
     if (sent.ok) {
       texts.push(sent.text);
+      parts.push({ seq: c.seq, text: sent.text });
       await saveChunk({ ...c, text: sent.text });
     } else {
       failed++;
       error = sent.error;
     }
   }
-  return { text: joinParts(texts), failed, error };
+  return { parts, failed, error };
+}
+
+export async function transcribeStored(id: string): Promise<{ text: string; failed: number; error?: string }> {
+  const { parts, failed, error } = await transcribeChunks(id);
+  return { text: joinParts(parts.map((p) => p.text)), failed, error };
 }
 
 export { deleteSession, listSessions, type SessionMeta };

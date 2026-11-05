@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
   // Fail closed: a database failure must not bypass the paid usage quota.
   let remaining: number | undefined;
-  if (authEnabled) {
+  if (authEnabled && !task.free) {
     const { data, error } = await (await getServerClient()).rpc("bump_ai_usage", { max_per_month: MONTHLY_LIMIT });
     if (error || typeof data !== "number") {
       return Response.json({ error: "No se pudo verificar tu cuota de IA. Intenta en un momento." }, { status: 503 });

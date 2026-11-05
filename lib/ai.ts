@@ -36,6 +36,7 @@ export interface Tasks {
   flashcards: { in: { text: string }; out: Flashcards };
   guide: { in: { text: string }; out: Guide };
   meeting: { in: { text: string; today: string }; out: Meeting };
+  polish: { in: { text: string; glossary?: string }; out: { text: string } };
   ask: { in: { question: string; notes: { id: string; title: string; text: string }[] }; out: Answer };
 }
 

@@ -862,3 +862,45 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
   .lx-brand { font-size: 21px; }
   .lx-title { font-size: clamp(32px, 9.5vw, 48px); }
 }
+
+/* ───────── meetings: start, live panel, speakers ───────── */
+.meet {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 75;
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 120px);
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; box-shadow: 8px 8px 0 var(--accent);
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.meet-body { padding: 16px 18px 18px; display: grid; gap: 14px; overflow: auto; }
+.meet-body p, .meet-help p { margin: 0; line-height: 1.5; color: var(--body-ink); }
+.meet-choices { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.meet-choice {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; padding: 10px 12px;
+  border: 2px solid var(--ink); border-radius: 12px; cursor: pointer; background: var(--paper);
+}
+.meet-choice input { grid-row: 1 / span 2; margin-top: 3px; }
+.meet-choice small { grid-column: 2; color: var(--muted); line-height: 1.35; }
+.meet-choice.on { background: var(--butter); }
+.meet-choice.off { opacity: 0.5; cursor: not-allowed; }
+.meet-help { padding: 10px 12px; border: 2px dashed var(--ink); border-radius: 12px; display: grid; gap: 8px; font-size: 14px; }
+.meet-help ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.4; color: var(--body-ink); }
+.meet-warn { font-weight: 700; color: var(--accent) !important; }
+.meet-field { display: grid; gap: 6px; font-size: 14px; }
+.meet-field small, .meet-note, .speaker small { color: var(--muted); line-height: 1.35; }
+.meet-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.meet-check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.speakers { display: grid; gap: 12px; max-height: 40vh; overflow: auto; }
+.speaker { display: grid; gap: 4px; }
+.speaker-name { font-weight: 700; font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.meet-live .meters { display: grid; gap: 6px; padding: 10px 18px 0; }
+.meter { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; align-items: center; font-size: 13px; }
+.meter-name { font-weight: 700; }
+.meter-bar { height: 8px; border: 2px solid var(--ink); border-radius: 99px; overflow: hidden; background: var(--paper); }
+.meter-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 120ms linear; }
+.meter-state { grid-column: 2; color: var(--muted); font-size: 12px; }
+.meter-state:empty { display: none; }
+.live-lines { padding: 12px 18px 16px; max-height: 34vh; overflow: auto; display: grid; gap: 8px; }
+.live-line { margin: 0; font-size: 16px; line-height: 1.4; }
+.live-line b { margin-right: 4px; }
+.live-line.remote b { color: var(--accent); }

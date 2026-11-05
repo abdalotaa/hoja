@@ -43,7 +43,8 @@ describe("POST /api/transcribe", () => {
     expect(await res.json()).toEqual({ text: "Hola equipo." });
     const body = vi.mocked(fetch).mock.calls[0][1]?.body as FormData;
     expect(body.get("language")).toBe("es");
-    expect(body.get("prompt")).toBe("hola");
+    expect(body.get("prompt")).toContain("Vocabulario: Hoja");
+    expect(body.get("prompt")).toMatch(/hola$/);
   });
   it("falls back to whisper-1 when the default model is unavailable", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: {} }, { status: 404 })).mockResolvedValueOnce(Response.json({ text: "ok" }));

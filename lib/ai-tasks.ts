@@ -1,6 +1,10 @@
 /** Every AI feature: its input rules, prompt and strict output schema. Server-side only. */
 
+import { cleanGlossary } from "./vocabulary";
+
 const MAX_TEXT = 12_000;
+// A meeting of an hour or more is a long transcript; the request body limit still caps it.
+const MAX_MEETING_TEXT = 40_000;
 
 type Str = { type: "string" } | { type: "string"; description: string };
 const str = (description?: string): Str => (description ? { type: "string", description } : { type: "string" });
@@ -23,6 +27,8 @@ export interface TaskSpec {
   schemaName: string;
   schema: object;
   maxTokens: number;
+  /** Cheap text cleanup that doesn't count against the monthly AI allowance (still rate-limited per person). */
+  free?: boolean;
   /** Validates the request body and returns the user message, or an error. */
   build: (body: Record<string, unknown>) => { ok: true; user: string } | { ok: false; error: string };
 }
@@ -33,12 +39,12 @@ const onlyKeys = (body: Record<string, unknown>, allowed: string[]) =>
 type Built = { ok: true; user: string } | { ok: false; error: string };
 
 /** Builds a task whose input is one block of text (plus optional extra keys). */
-function fromText(extra: string[] = [], decorate?: (b: Record<string, unknown>, wrapped: string) => string) {
+function fromText(extra: string[] = [], decorate?: (b: Record<string, unknown>, wrapped: string) => string, max = MAX_TEXT) {
   return (body: Record<string, unknown>): Built => {
     if (!onlyKeys(body, ["task", "text", ...extra])) return { ok: false, error: "Solicitud inválida." };
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (text.length < 20) return { ok: false, error: "Muy poco texto para esto." };
-    if (text.length > MAX_TEXT) return { ok: false, error: `Máximo ${MAX_TEXT.toLocaleString("es-MX")} caracteres por vez.` };
+    if (text.length > max) return { ok: false, error: `Máximo ${max.toLocaleString("es-MX")} caracteres por vez.` };
     const wrapped = `<texto>\n${text}\n</texto>`;
     return { ok: true, user: decorate ? decorate(body, wrapped) : wrapped };
   };
@@ -101,9 +107,14 @@ export const TASKS: Record<string, TaskSpec> = {
       BASE +
       "Tu tarea: convertir la transcripción de una reunión en notas accionables. Los pendientes deben ser " +
       "concretos, con responsable solo si se menciona y con fecha solo si se menciona; las fechas relativas " +
-      "('el viernes', 'mañana') se resuelven con la fecha de hoy que se te da y se escriben como AAAA-MM-DD.",
+      "('el viernes', 'mañana') se resuelven con la fecha de hoy que se te da y se escriben como AAAA-MM-DD. " +
+      "Un día de la semana sin más detalle es el próximo que llegue (nunca uno pasado). Si lo que se dice no es una fecha " +
+      "('esta semana', 'pronto', 'luego', 'sin fecha fija'), due es null: no la inventes. Si las líneas de la transcripción " +
+      "empiezan con el nombre de quien habló ('Marta: …'), úsalo como responsable cuando esa persona asume o se le asigna " +
+      "algo, y atribuye las decisiones a quien las dijo; un nombre genérico como 'Hablante A' o 'Participantes' no es un " +
+      "responsable: déjalo en null.",
     schemaName: "meeting_notes",
-    maxTokens: 1500,
+    maxTokens: 1800,
     schema: obj({
       title: str(),
       summary: str("2 a 4 frases."),
@@ -118,7 +129,25 @@ export const TASKS: Record<string, TaskSpec> = {
     }),
     build: fromText(["today"], (b, wrapped) => {
       const today = typeof b.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.today) ? b.today : "desconocida";
-      return `Fecha de hoy: ${today}\n${wrapped}`;
+      const weekday = today === "desconocida" ? "" : new Date(`${today}T12:00:00Z`).toLocaleDateString("es-MX", { weekday: "long", timeZone: "UTC" });
+      return `Fecha de hoy: ${today}${weekday ? ` (${weekday})` : ""}\n${wrapped}`;
+    }, MAX_MEETING_TEXT),
+  },
+
+  polish: {
+    system:
+      BASE +
+      "Tu tarea: corregir la ortografía, los acentos, las mayúsculas y la puntuación de una transcripción hablada. " +
+      "No cambies el significado ni las palabras (salvo las que estén mal escritas o mal oídas con claridad), no resumas, " +
+      "no agregues ni quites ideas, no reordenes. Conserva cada salto de línea y el nombre al inicio de cada línea " +
+      "('Marta: …') tal como está. Si se te dan nombres y términos correctos, escríbelos exactamente así.",
+    schemaName: "polished_transcript",
+    maxTokens: 4500,
+    free: true,
+    schema: obj({ text: str("La transcripción corregida, con los mismos saltos de línea.") }),
+    build: fromText(["glossary"], (b, wrapped) => {
+      const glossary = cleanGlossary(b.glossary);
+      return glossary ? `Nombres y términos correctos: ${glossary}\n${wrapped}` : wrapped;
     }),
   },
 

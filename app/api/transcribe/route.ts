@@ -1,6 +1,7 @@
 import { guardAudioRequest, MAX_AUDIO_BYTES } from "@/lib/guards";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
+import { buildPrompt } from "@/lib/vocabulary";
 
 const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
 const FALLBACK_MODEL = "whisper-1";
@@ -46,7 +47,8 @@ export async function POST(request: Request) {
   }
   const context = form.get("context");
   // The tail of the previous chunk helps the model keep names and sentences consistent across chunk boundaries.
-  const prompt = typeof context === "string" ? context.slice(-400) : "";
+  // The vocabulary also stops the model from hearing the app's name as "Oja" or "Enoja".
+  const prompt = buildPrompt(form.get("glossary"), typeof context === "string" ? context : "");
 
   let res: Response;
   try {
