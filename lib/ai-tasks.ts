@@ -179,3 +179,15 @@ export const TASKS: Record<string, TaskSpec> = {
     },
   },
 };
+
+// A long meeting is summarized in parts (task "meeting"); this joins the partial results into one.
+TASKS.meetingmerge = {
+  ...TASKS.meeting,
+  system:
+    BASE +
+    "Tu tarea: recibes los resúmenes parciales, en orden, de una reunión larga. Únelos en un solo resultado: un resumen " +
+    "de 3 a 6 frases de toda la reunión, las decisiones sin repetir y los pendientes sin repetir (si el mismo pendiente " +
+    "aparece en dos partes, déjalo una vez con su responsable y fecha). Conserva las fechas ya escritas como AAAA-MM-DD " +
+    "y no inventes responsables, fechas ni pendientes.",
+  maxTokens: 2500,
+};

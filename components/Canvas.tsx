@@ -33,6 +33,7 @@ import { discardMeeting, recoverMeeting } from "@/lib/meeting-io";
 import { dropEchoes, MIC, renderTranscript, sortLines, type MeetingLine } from "@/lib/meeting";
 import { loadGlossary } from "@/lib/glossary";
 import { polishTranscript } from "@/lib/polish";
+import { summarizeMeeting } from "@/lib/meeting-summary";
 import MeetingStart from "./MeetingStart";
 import MeetingLive from "./MeetingLive";
 import MeetingFinish from "./MeetingFinish";
@@ -638,7 +639,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
         setBusyFor(note.id, "summarize");
         try {
           const today = new Date().toLocaleDateString("en-CA");
-          const result = await ai("meeting", { text: transcript, today });
+          const result = await summarizeMeeting(transcript, today, (i, n) => setNotice(`Resumiendo la reunión, parte ${i} de ${n}…`));
           setNotes((all) =>
             all.map((n) => (n.id === note.id ? { ...n, title: result.title, text: formatMeeting(result, transcript), updatedAt: Date.now() } : n)),
           );
