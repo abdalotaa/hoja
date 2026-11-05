@@ -156,7 +156,8 @@ export const TASKS: Record<string, TaskSpec> = {
     system:
       BASE +
       "Tu tarea: responder la pregunta usando SOLO las notas dadas. Si la respuesta no está en las notas, dilo " +
-      "claramente y no adivines. Responde corto y directo. En 'sources' pon los ids de las notas que usaste.",
+      "claramente y no adivines. Responde corto y directo, en texto plano con saltos de línea reales (nunca escribas " +
+      "la secuencia \\n ni uses markdown). En 'sources' pon los ids de las notas que usaste.",
     schemaName: "note_answer",
     maxTokens: 700,
     schema: obj({ answer: str(), sources: list(str()) }),

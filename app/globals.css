@@ -330,6 +330,7 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .ask-body form { display: grid; gap: 10px; }
 .ask-body p { margin: 0; line-height: 1.5; color: var(--body-ink); }
 .ask-error { color: var(--accent); font-weight: 700; }
+.ask-answer p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ask-answer { padding: 12px 14px; background: var(--butter); border: 2px solid var(--ink); border-radius: 12px; }
 .ask-sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px !important; }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ai } from "@/lib/ai";
+import { ai, plainAnswer } from "@/lib/ai";
 import type { Note } from "@/lib/notes";
 import { noteText } from "@/lib/table";
 
@@ -48,7 +48,7 @@ export default function AskDialog({ notes, onOpenNote, onClose }: Props) {
         notes: picked.map((n) => ({ id: n.id, title: n.title, text: noteText(n) })),
       });
       const byId = new Map(picked.map((n) => [n.id, n]));
-      setResult({ answer: out.answer, sources: out.sources.map((id) => byId.get(id)).filter((n): n is Note => Boolean(n)) });
+      setResult({ answer: plainAnswer(out.answer), sources: out.sources.map((id) => byId.get(id)).filter((n): n is Note => Boolean(n)) });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo responder.");
     } finally {

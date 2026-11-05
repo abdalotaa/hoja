@@ -89,3 +89,8 @@ export function formatMeeting(m: Meeting, original: string): string {
 export function formatGuide(g: Guide): string {
   return g.sections.map((s) => `## ${s.heading}\n${list(s.points)}`).join("\n\n");
 }
+
+/** Models sometimes write a line break as the two characters \n; turn those into real line breaks. */
+export function plainAnswer(text: string): string {
+  return text.replace(/\\r\\n|\\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
