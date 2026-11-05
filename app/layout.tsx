@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Caveat } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import AttributionCapture from "@/components/AttributionCapture";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="es" className={`${archivo.variable} ${caveat.variable}`}>
       <body>
         {children}
+        <AttributionCapture />
         <Analytics />
       </body>
     </html>

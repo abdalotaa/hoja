@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { readAttribution } from "@/lib/attribution";
 import { getBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "signin" | "signup" | "reset" | "link";
@@ -74,7 +75,7 @@ export default function LoginForm({ linkError, start = "signin" }: { linkError: 
       const { data, error: err } = await auth.signUp({
         email: mail,
         password,
-        options: { emailRedirectTo: `${origin}/auth/callback` },
+        options: { emailRedirectTo: `${origin}/auth/callback`, data: readAttribution() },
       });
       if (err) return fail(err);
       if (data.session) {
@@ -96,7 +97,10 @@ export default function LoginForm({ linkError, start = "signin" }: { linkError: 
       return;
     }
 
-    const { error: err } = await auth.signInWithOtp({ email: mail, options: { emailRedirectTo: `${origin}/auth/callback` } });
+    const { error: err } = await auth.signInWithOtp({
+      email: mail,
+      options: { emailRedirectTo: `${origin}/auth/callback`, data: readAttribution() },
+    });
     if (err) return fail(err);
     setBusy(false);
     setSent("link");
