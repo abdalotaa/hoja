@@ -1,7 +1,7 @@
 import { guardAudioRequest, MAX_AUDIO_BYTES } from "@/lib/guards";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
-import { buildPrompt } from "@/lib/vocabulary";
+import { buildPrompt, isNoise } from "@/lib/vocabulary";
 
 const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
 const FALLBACK_MODEL = "whisper-1";
@@ -75,5 +75,6 @@ export async function POST(request: Request) {
 
   const data = (await res.json().catch(() => null)) as { text?: unknown } | null;
   if (!data || typeof data.text !== "string") return Response.json({ error: "Respuesta inválida del servicio." }, { status: 502 });
-  return Response.json({ text: data.text.trim() });
+  const text = data.text.trim();
+  return Response.json({ text: isNoise(text, form.get("glossary")) ? "" : text });
 }

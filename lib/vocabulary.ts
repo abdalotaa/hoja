@@ -14,3 +14,25 @@ export function buildPrompt(glossary?: unknown, context = ""): string {
   const parts = [BASE, extra ? `Nombres y términos: ${extra}.` : "", context ? context.slice(-400) : ""];
   return parts.filter(Boolean).join(" ");
 }
+
+const plain = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ñ\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+/**
+ * On silence or background noise the transcription models sometimes "hear" the context they were given (the
+ * vocabulary line and the person's glossary) or loop on one phrase. Such text is not speech and is dropped.
+ */
+export function isNoise(text: string, glossary?: unknown): boolean {
+  const words = plain(text);
+  if (words.length === 0) return true;
+  const prompt = new Set(plain(buildPrompt(glossary)));
+  if (words.length >= 3 && words.filter((w) => prompt.has(w)).length / words.length >= 0.8) return true;
+  // The same few words over and over ("This is the This is the …").
+  return words.length >= 8 && new Set(words).size <= Math.max(2, Math.floor(words.length / 4));
+}

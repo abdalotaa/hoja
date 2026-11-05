@@ -117,3 +117,19 @@ describe("own notes", () => {
     expect(withJot("Ana: hola", "  ")).toBe("Ana: hola");
   });
 });
+
+describe("noise filter", () => {
+  it("drops the context the model repeats back on silence", async () => {
+    const { isNoise } = await import("../lib/vocabulary");
+    expect(isNoise("Reunión de trabajo en español de México. Vocabulario: Hoja (nombre de la app), M4PL3, pendientes, calendario.")).toBe(true);
+    expect(isNoise("Reunión de trabajo en español de México. Vocabulario: Hoja (nombre de la app). Nombres y términos: Mente de tiburón, hablante principal.", "Mente de tiburón, hablante principal")).toBe(true);
+    expect(isNoise("This is the This is the This is the This is the")).toBe(true);
+    expect(isNoise("   ")).toBe(true);
+  });
+  it("keeps real speech, even about the app", async () => {
+    const { isNoise } = await import("../lib/vocabulary");
+    expect(isNoise("En Hoja pulsas reunión y hablas, y al final salen los pendientes con su fecha.")).toBe(false);
+    expect(isNoise("Sí, lo reviso el domingo por la noche.")).toBe(false);
+    expect(isNoise("Hoja")).toBe(false);
+  });
+});

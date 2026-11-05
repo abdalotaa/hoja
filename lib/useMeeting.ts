@@ -7,6 +7,7 @@ import { canTap, openTap, type Tap } from "./audio-tap";
 import { dropEchoes, MIC, REMOTE, sortLines, type MeetingLine, type Source } from "./meeting";
 import { connectRealtime, fetchSecret, type LiveState, type Realtime } from "./realtime";
 import { pickMime } from "./transcript";
+import { isNoise } from "./vocabulary";
 
 /**
  * A live meeting: the microphone ("Tú") and, optionally, the audio of the call ("Participantes"), each streamed to a
@@ -90,6 +91,7 @@ export function useMeeting() {
         getSecret: () => fetchSecret(glossary),
         onPartial: (text) => setPartial((p) => ({ ...p, [src]: text })),
         onTurn: (turn) =>
+          !isNoise(turn.text, glossary) &&
           addLine({ id: `${src}:${turn.id}`, t: turn.t, src, speaker: src === "mic" ? MIC : REMOTE, text: turn.text }),
         onState: (state, detail) => {
           if (state === "failed") failed.current[src] = true;
