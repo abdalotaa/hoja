@@ -8,6 +8,7 @@ const SEGMENT_MS = 25_000;
 const FIRST_SEGMENT_MS = 10_000; // the first text shows up sooner
 const MIN_BYTES = 1_500;
 const TRIES = 4;
+const REQUEST_TIMEOUT_MS = 60_000;
 
 type Sent = { ok: true; text: string } | { ok: false; fatal: boolean; error: string };
 
@@ -18,9 +19,10 @@ async function sendChunk(blob: Blob, mime: string, context: string): Promise<Sen
   if (context) form.append("context", context);
   let res: Response;
   try {
-    res = await fetch("/api/transcribe", { method: "POST", headers: { "X-Hoja-Client": "1" }, body: form });
+    // Without a limit a request that never answers would leave the whole recovery waiting forever.
+    res = await fetch("/api/transcribe", { method: "POST", headers: { "X-Hoja-Client": "1" }, body: form, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   } catch {
-    return { ok: false, fatal: false, error: "Sin conexión." };
+    return { ok: false, fatal: false, error: "Sin conexión o tardó demasiado." };
   }
   const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
   if (res.ok && typeof data.text === "string") return { ok: true, text: data.text };
@@ -41,13 +43,17 @@ async function sendWithRetries(blob: Blob, mime: string, context: string): Promi
 }
 
 /** Transcribes every saved chunk of a session that doesn't have text yet. Used to recover an interrupted recording. */
-export async function transcribeChunks(id: string): Promise<{ parts: { seq: number; text: string }[]; failed: number; error?: string }> {
+export async function transcribeChunks(
+  id: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ parts: { seq: number; text: string }[]; failed: number; error?: string }> {
   const chunks = await getChunks(id);
   let failed = 0;
   let error: string | undefined;
   const texts: string[] = [];
   const parts: { seq: number; text: string }[] = [];
-  for (const c of chunks) {
+  for (const [i, c] of chunks.entries()) {
+    onProgress?.(i, chunks.length);
     if (c.text !== undefined) {
       texts.push(c.text);
       parts.push({ seq: c.seq, text: c.text });
@@ -61,8 +67,11 @@ export async function transcribeChunks(id: string): Promise<{ parts: { seq: numb
     } else {
       failed++;
       error = sent.error;
+      // No session or no credit: every other chunk would fail the same way.
+      if (sent.fatal) break;
     }
   }
+  onProgress?.(chunks.length, chunks.length);
   return { parts, failed, error };
 }
 

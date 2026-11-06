@@ -101,6 +101,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const [installing, setInstalling] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const [recoverStep, setRecoverStep] = useState("");
   const [orphans, setOrphans] = useState<SessionMeta[]>([]);
   const savedPartial = useRef("");
 
@@ -711,7 +712,8 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
       const meta: SessionMeta = { id: f.id, mode: as, startedAt: f.origin };
       let lines = f.lines;
       let detected = false;
-      const progress = (done: number, total: number) => setWorking(`Identificando quién habló… ${Math.min(done + 1, total)}/${total}`);
+      const progress = (done: number, total: number, stage?: "mic" | "voices") =>
+        setWorking(`${stage === "mic" ? "Transcribiendo" : "Identificando quién habló"}… ${Math.min(done + 1, total)}/${total}`);
 
       if (f.incomplete) {
         // A live connection gave up: rebuild everything from the audio saved here.
@@ -831,8 +833,18 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   const recover = useCallback(
     async (meta: SessionMeta) => {
       setRecovering(true);
-      const r = await recoverMeeting(meta);
-      setRecovering(false);
+      setRecoverStep("");
+      let r: Awaited<ReturnType<typeof recoverMeeting>>;
+      try {
+        r = await recoverMeeting(meta, (done, total, stage) =>
+          setRecoverStep(stage === "voices" ? `Identificando quién habló… ${Math.min(done + 1, total)}/${total}` : `Transcribiendo… ${Math.min(done + 1, total)}/${total}`),
+        );
+      } catch {
+        setNotice("No se pudo transcribir. El audio sigue guardado; intenta de nuevo en un momento.");
+        return;
+      } finally {
+        setRecovering(false);
+      }
       if (r.failed > 0) {
         setNotice(`${r.error ?? "No se pudo transcribir."} El audio sigue guardado; intenta de nuevo en un momento.`);
         return;
@@ -1187,7 +1199,7 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
             </div>
             <p className="live-text">
               {recovering
-                ? "Transcribiendo el audio guardado…"
+                ? recoverStep || "Transcribiendo el audio guardado…"
                 : `Una grabación (${new Date(orphans[0].startedAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}) no terminó de guardarse.`}
             </p>
             {!recovering && (

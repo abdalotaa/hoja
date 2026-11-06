@@ -5,6 +5,7 @@ import { decodeMono16k, encodeWav, RATE, toDataUrl } from "./wav";
 /** Speaker identification: sends audio windows to /api/diarize and keeps the same person under the same label. */
 
 const TRIES = 3;
+const REQUEST_TIMEOUT_MS = 240_000; // a 20-minute window can take a couple of minutes to process
 const MAX_REFS = 4;
 const REF_SECONDS = 3.5;
 const MIN_REF_SECONDS = 1.5;
@@ -27,9 +28,9 @@ async function request(blob: Blob, filename: string, refs: Ref[]): Promise<Resul
   }
   let res: Response;
   try {
-    res = await fetch("/api/diarize", { method: "POST", headers: { "X-Hoja-Client": "1" }, body: form });
+    res = await fetch("/api/diarize", { method: "POST", headers: { "X-Hoja-Client": "1" }, body: form, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   } catch {
-    return { ok: false, fatal: false, error: "Sin conexión." };
+    return { ok: false, fatal: false, error: "Sin conexión o tardó demasiado." };
   }
   const data = (await res.json().catch(() => ({}))) as { segments?: { text: string; speaker: string; start: number; end: number }[]; error?: string };
   if (res.ok && Array.isArray(data.segments)) return { ok: true, segments: data.segments };

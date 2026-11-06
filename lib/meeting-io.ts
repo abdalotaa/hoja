@@ -18,9 +18,9 @@ export async function remoteWindowsOf(meta: SessionMeta): Promise<string[]> {
 
 export async function recoverMeeting(
   meta: SessionMeta,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, stage?: "mic" | "voices") => void,
 ): Promise<{ lines: MeetingLine[]; failed: number; error?: string }> {
-  const mic = await transcribeChunks(meta.id);
+  const mic = await transcribeChunks(meta.id, (done, total) => onProgress?.(done, total, "mic"));
   const lines: MeetingLine[] = mic.parts
     .filter((p) => p.text.trim())
     .map((p) => ({ id: `rec:${p.seq}`, t: segmentStart(p.seq), src: "mic" as const, speaker: MIC, text: p.text.trim() }));
@@ -29,7 +29,7 @@ export async function recoverMeeting(
 
   const windows = await remoteWindowsOf(meta);
   if (windows.length > 0) {
-    const remote = await diarizeWindows(windows, meta.startedAt, onProgress);
+    const remote = await diarizeWindows(windows, meta.startedAt, (done, total) => onProgress?.(done, total, "voices"));
     lines.push(...remote.lines);
     failed += remote.failed;
     error = remote.error ?? error;
