@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { deleteSession, getChunks, listSessions, saveChunk, saveSession, type SessionMeta } from "./audio-store";
+import { transcribeLocalBlob } from "./local-whisper";
 import { joinParts, pickMime, tail } from "./transcript";
 
 const SEGMENT_MS = 25_000;
@@ -32,6 +33,17 @@ async function sendChunk(blob: Blob, mime: string, context: string): Promise<Sen
   return { ok: false, fatal, error: data.error ?? "No se pudo transcribir.", rateLimited: res.status === 429 && !fatal };
 }
 
+export type Engine = "cloud" | "local";
+
+/** Same result shape as the server, so recovery treats both engines alike. A model that cannot load is fatal. */
+async function sendLocal(blob: Blob): Promise<Sent> {
+  try {
+    return { ok: true, text: await transcribeLocalBlob(blob) };
+  } catch {
+    return { ok: false, fatal: true, error: "Este navegador no pudo cargar el modelo de voz local." };
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function sendWithRetries(blob: Blob, mime: string, context: string): Promise<Sent> {
@@ -57,6 +69,7 @@ async function sendWithRetries(blob: Blob, mime: string, context: string): Promi
 export async function transcribeChunks(
   id: string,
   onProgress?: (done: number, total: number) => void,
+  engine: Engine = "cloud",
 ): Promise<{ parts: { seq: number; text: string }[]; failed: number; error?: string }> {
   const chunks = await getChunks(id);
   let failed = 0;
@@ -70,7 +83,7 @@ export async function transcribeChunks(
       parts.push({ seq: c.seq, text: c.text });
       continue;
     }
-    const sent = await sendWithRetries(c.blob, c.mime, tail(joinParts(texts)));
+    const sent = engine === "local" ? await sendLocal(c.blob) : await sendWithRetries(c.blob, c.mime, tail(joinParts(texts)));
     if (sent.ok) {
       texts.push(sent.text);
       parts.push({ seq: c.seq, text: sent.text });
