@@ -88,9 +88,10 @@ export async function guardAiRequest(request: Request, userId?: string): Promise
 
 /** Voice chunks: ~25 s of compressed audio each, so a long meeting is a few hundred calls. Limits are per person. */
 export const MAX_AUDIO_BYTES = 4_000_000;
-const AUDIO_PER_MINUTE = 12;
-const AUDIO_PER_DAY = 600;
-const AUDIO_GLOBAL_PER_DAY = 4000;
+// A recovery sends every saved chunk back to back, so a long meeting needs far more than a few per minute.
+const AUDIO_PER_MINUTE = 40;
+const AUDIO_PER_DAY = 2500;
+const AUDIO_GLOBAL_PER_DAY = 12000;
 const audioHits = new Map<string, number[]>();
 let audioGlobal: number[] = [];
 

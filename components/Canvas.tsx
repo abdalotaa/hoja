@@ -708,36 +708,43 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
     async (as: "note" | "meeting") => {
       setStopping(true);
       setWorking("Terminando de transcribir…");
-      const f = await meet.stop();
-      const meta: SessionMeta = { id: f.id, mode: as, startedAt: f.origin };
-      let lines = f.lines;
-      let detected = false;
-      const progress = (done: number, total: number, stage?: "mic" | "voices") =>
-        setWorking(`${stage === "mic" ? "Transcribiendo" : "Identificando quién habló"}… ${Math.min(done + 1, total)}/${total}`);
+      try {
+        const f = await meet.stop();
+        const meta: SessionMeta = { id: f.id, mode: as, startedAt: f.origin };
+        let lines = f.lines;
+        let detected = false;
+        const progress = (done: number, total: number, stage?: "mic" | "voices") =>
+          setWorking(`${stage === "mic" ? "Transcribiendo" : "Identificando quién habló"}… ${Math.min(done + 1, total)}/${total}`);
 
-      if (f.incomplete) {
-        // A live connection gave up: rebuild everything from the audio saved here.
-        setWorking("Completando desde el audio guardado…");
-        const r = await recoverMeeting(meta, progress);
-        if (r.failed > 0) {
-          setStopping(false);
-          setNotice(`${r.error ?? "No se pudo transcribir todo."} El audio quedó guardado: usa «Recuperar» para reintentar.`);
-          await refreshOrphans();
-          return;
+        if (f.incomplete) {
+          // A live connection gave up: rebuild everything from the audio saved here.
+          setWorking("Completando desde el audio guardado…");
+          const r = await recoverMeeting(meta, progress);
+          if (r.failed > 0) {
+            setNotice(`${r.error ?? "No se pudo transcribir todo."} El audio quedó guardado: usa «Recuperar» para reintentar.`);
+            await refreshOrphans();
+            return;
+          }
+          lines = r.lines;
+          detected = f.windows.length > 0;
+        } else if (f.windows.length > 0) {
+          setWorking("Identificando quién habló…");
+          const d = await diarizeWindows(f.windows, f.origin, progress);
+          if (d.lines.length > 0) {
+            lines = [...lines.filter((l) => l.src === "mic"), ...d.lines];
+            detected = true;
+          }
+          if (d.failed > 0) setNotice("No pude separar bien las voces: lo que dijeron los demás quedó junto, como «Participantes».");
         }
-        lines = r.lines;
-        detected = f.windows.length > 0;
-      } else if (f.windows.length > 0) {
-        setWorking("Identificando quién habló…");
-        const d = await diarizeWindows(f.windows, f.origin, progress);
-        if (d.lines.length > 0) {
-          lines = [...lines.filter((l) => l.src === "mic"), ...d.lines];
-          detected = true;
-        }
-        if (d.failed > 0) setNotice("No pude separar bien las voces: lo que dijeron los demás quedó junto, como «Participantes».");
+        setStopping(false);
+        await conclude(lines, as, meta, detected);
+      } catch {
+        // Whatever went wrong, the box must not stay on "transcribiendo": the audio is still saved here.
+        setNotice("No se pudo terminar la transcripción. El audio quedó guardado: usa «Recuperar» para reintentar.");
+        await refreshOrphans();
+      } finally {
+        setStopping(false);
       }
-      setStopping(false);
-      await conclude(lines, as, meta, detected);
     },
     [meet, conclude, refreshOrphans],
   );
