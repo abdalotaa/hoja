@@ -30,6 +30,7 @@ import type { SessionMeta } from "@/lib/audio-store";
 import { useMeeting } from "@/lib/useMeeting";
 import { diarizeWindows } from "@/lib/diarize";
 import { importRecordings } from "@/lib/import-audio";
+import { localSupported, onLocalStatus } from "@/lib/local-whisper";
 import { discardMeeting, recoverMeeting } from "@/lib/meeting-io";
 import { dropEchoes, MIC, renderTranscript, sortLines, withJot, type MeetingLine } from "@/lib/meeting";
 import { loadGlossary } from "@/lib/glossary";
@@ -838,18 +839,23 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
   }, [server, speech.listening, speech.error, speech.finalText, speech.interim, mode, saveTranscript]);
 
   const recover = useCallback(
-    async (meta: SessionMeta) => {
+    async (meta: SessionMeta, engine: "cloud" | "local" = "cloud") => {
       setRecovering(true);
       setRecoverStep("");
+      onLocalStatus(setRecoverStep);
       let r: Awaited<ReturnType<typeof recoverMeeting>>;
       try {
-        r = await recoverMeeting(meta, (done, total, stage) =>
-          setRecoverStep(stage === "voices" ? `Identificando quién habló… ${Math.min(done + 1, total)}/${total}` : `Transcribiendo… ${Math.min(done + 1, total)}/${total}`),
+        r = await recoverMeeting(
+          meta,
+          (done, total, stage) =>
+            setRecoverStep(stage === "voices" ? `${engine === "local" ? "Transcribiendo a los participantes" : "Identificando quién habló"}… ${Math.min(done + 1, total)}/${total}` : `Transcribiendo… ${Math.min(done + 1, total)}/${total}`),
+          engine,
         );
       } catch {
         setNotice("No se pudo transcribir. El audio sigue guardado; intenta de nuevo en un momento.");
         return;
       } finally {
+        onLocalStatus(null);
         setRecovering(false);
       }
       if (r.failed > 0) {
@@ -1214,6 +1220,17 @@ export default function Canvas({ userEmail, userName, userId }: { userEmail?: st
                 <button className="btn line" onClick={() => void recover(orphans[0])}>
                   Recuperar
                 </button>{" "}
+                {localSupported() && (
+                  <>
+                    <button
+                      className="btn line"
+                      title="Transcribe en este navegador, sin costo ni saldo de OpenAI. La primera vez descarga un modelo de ~250 MB y es más lento."
+                      onClick={() => void recover(orphans[0], "local")}
+                    >
+                      Recuperar sin costo
+                    </button>{" "}
+                  </>
+                )}
                 <button className="btn line" onClick={() => void discardRecording(orphans[0])}>
                   Descartar
                 </button>

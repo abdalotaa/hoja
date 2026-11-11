@@ -65,3 +65,16 @@ describe("transcribeChunks with rate limits", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+vi.mock("../lib/local-whisper", () => ({ transcribeLocalBlob: vi.fn(async () => "texto local"), transcribeLocalSamples: vi.fn(), onLocalStatus: vi.fn(), localSupported: () => true }));
+
+describe("transcribeChunks with the local engine", () => {
+  it("never calls the server and saves the text it produced", async () => {
+    store.chunks = [chunk(0), chunk(1, "ya estaba")];
+    const r = await transcribeChunks("s", undefined, "local");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(r.failed).toBe(0);
+    expect(r.parts.map((p) => p.text)).toEqual(["texto local", "ya estaba"]);
+    expect(store.saved).toHaveBeenCalledTimes(1);
+  });
+});
