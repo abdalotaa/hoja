@@ -9,8 +9,10 @@ const FIRST_SEGMENT_MS = 10_000; // the first text shows up sooner
 const MIN_BYTES = 1_500;
 const TRIES = 4;
 const REQUEST_TIMEOUT_MS = 60_000;
+const RATE_WAIT_MS = 15_000;
+const RATE_WAITS = 8;
 
-type Sent = { ok: true; text: string } | { ok: false; fatal: boolean; error: string };
+type Sent = { ok: true; text: string } | { ok: false; fatal: boolean; error: string; rateLimited?: boolean };
 
 /** One audio chunk to text. Fatal errors (no session, no credit) are not worth retrying. */
 async function sendChunk(blob: Blob, mime: string, context: string): Promise<Sent> {
@@ -27,16 +29,25 @@ async function sendChunk(blob: Blob, mime: string, context: string): Promise<Sen
   const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
   if (res.ok && typeof data.text === "string") return { ok: true, text: data.text };
   const fatal = [401, 403, 413].includes(res.status) || data.error?.includes("saldo") === true;
-  return { ok: false, fatal, error: data.error ?? "No se pudo transcribir." };
+  return { ok: false, fatal, error: data.error ?? "No se pudo transcribir.", rateLimited: res.status === 429 && !fatal };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function sendWithRetries(blob: Blob, mime: string, context: string): Promise<Sent> {
   let last: Sent = { ok: false, fatal: false, error: "No se pudo transcribir." };
+  let waits = 0;
   for (let i = 0; i < TRIES; i++) {
     last = await sendChunk(blob, mime, context);
     if (last.ok || last.fatal) return last;
+    if (last.rateLimited && waits < RATE_WAITS) {
+      // Too many chunks in a minute (a long recovery sends hundreds): wait for the window to clear and try again
+      // instead of burning the retries and leaving the chunk without text.
+      waits++;
+      i--;
+      await sleep(RATE_WAIT_MS);
+      continue;
+    }
     await sleep(1500 * 2 ** i);
   }
   return last;

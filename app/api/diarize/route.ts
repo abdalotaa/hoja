@@ -2,6 +2,9 @@ import { guardAudioRequest, MAX_AUDIO_BYTES } from "@/lib/guards";
 import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
 
+// Without this the host cuts the request at its default limit, which is short for long audio.
+export const maxDuration = 300;
+
 const MODEL = process.env.OPENAI_DIARIZE_MODEL ?? "gpt-4o-transcribe-diarize";
 // The audio itself stays under MAX_AUDIO_BYTES; the rest of the body is room for up to four short voice samples.
 const MAX_BODY_BYTES = 4_400_000;

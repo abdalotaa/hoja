@@ -3,6 +3,9 @@ import { authEnabled } from "@/lib/supabase/env";
 import { getUser } from "@/lib/supabase/server";
 import { buildPrompt, isNoise } from "@/lib/vocabulary";
 
+// Without this the host cuts the request at its default limit, which is short for long audio.
+export const maxDuration = 60;
+
 const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-mini-transcribe";
 const FALLBACK_MODEL = "whisper-1";
 

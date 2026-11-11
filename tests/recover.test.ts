@@ -48,3 +48,20 @@ describe("transcribeChunks", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });
+
+describe("transcribeChunks with rate limits", () => {
+  it("waits and retries a chunk that was rejected for going too fast", async () => {
+    vi.useFakeTimers();
+    store.chunks = [chunk(0)];
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ error: "Demasiados audios seguidos. Intenta en un momento." }, { status: 429 }))
+      .mockResolvedValue(Response.json({ text: "listo" }));
+    const done = transcribeChunks("s");
+    await vi.runAllTimersAsync();
+    const r = await done;
+    vi.useRealTimers();
+    expect(r.failed).toBe(0);
+    expect(r.parts[0].text).toBe("listo");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});

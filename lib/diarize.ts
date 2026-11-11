@@ -80,7 +80,13 @@ export class Diarizer {
       speaker: s.speaker,
       text: s.text,
     }));
-    if (!fixed && samples) await this.learn(sent.segments, samples);
+    if (!fixed && samples) {
+      try {
+        await this.learn(sent.segments, samples);
+      } catch {
+        // Voice samples only help the next window; the lines of this one are already good.
+      }
+    }
     return { lines };
   }
 
